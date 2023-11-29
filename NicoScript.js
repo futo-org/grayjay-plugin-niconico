@@ -43,27 +43,27 @@ class NicoVideoPager extends VideoPager {
 //#region Parsing
 
 function nicoVideoToPlatformVideo(nicoVideo) {
-	const vid = nicoVideo.content;
+	const v = nicoVideo.content;
 
-	const videoUrl = `https://www.nicovideo.jp/watch/${vid.id}`;
-	const thumbnailUrl = vid.thumbnail.listingUrl;
-	const uploadDate = dateToUnixSeconds(vid.registeredAt);
+	const videoUrl = `https://www.nicovideo.jp/watch/${v.id}`;
+	const thumbnailUrl = v.thumbnail.listingUrl;
+	const uploadDate = dateToUnixSeconds(v.registeredAt);
 
 	const platformVideo = {
-		id: vid.id && new PlatformID(PLATFORM, vid.id, config.id),
-		name: vid.title,
+		id: v.id && new PlatformID(PLATFORM, v.id, config.id),
+		name: v.title,
 		thumbnails: thumbnailUrl && new Thumbnails([new Thumbnail(thumbnailUrl, 0)]),
-		duration: vid.duration,
-		viewCount: vid.count.view,
+		duration: v.duration,
+		viewCount: v.count.view,
 		url: videoUrl,
-		isLive: false, // TODO There is vid.videoLive but it seems always false
+		isLive: false, // TODO There is v.videoLive but it seems always false
 		uploadDate,
 		shareUrl: videoUrl,
 		author: new PlatformAuthorLink(
-			vid.owner.id,
-			vid.owner.name,
-			`https://www.nicovideo.jp/user/${vid.owner.id}`,
-			vid.owner.iconUrl
+			new PlatformID(PLATFORM, v.owner.id, config.id),
+			v.owner.name,
+			`https://www.nicovideo.jp/user/${v.owner.id}`,
+			v.owner.iconUrl
 		),
 	}
 
