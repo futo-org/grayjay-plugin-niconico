@@ -2,8 +2,9 @@ const PLATFORM = "Niconico";
 const PLATFORM_CLAIMTYPE = 21;
 
 const URL_RECOMMENDED_FEED = "https://nvapi.nicovideo.jp/v1/recommend?recipeId=video_recommendation_recommend&sensitiveContents=mask&site=nicovideo&_frontendId=6&_frontendVersion=0";
+const NICO_URL_REGEX = /.*nicovideo.jp\/watch\/(.*)/;
 
-var config = {};
+let config = {};
 
 //#region Plugin Hooks
 
@@ -25,7 +26,7 @@ source.getHome = function() {
 			}
 	
 			const nicoVideos = JSON.parse(res.body).data.items;
-			const platformVideos = nicoVideos.map(nicoVideoJSONToPlatformVideo).filter(x => x);
+			const platformVideos = nicoVideos.map(nicoVideoToPlatformVideo).filter(x => x);
 	
 			return new RecommendedVideoPager({ videos: platformVideos, hasMore: false })
 		}
@@ -67,7 +68,7 @@ source.getSearchCapabilities = () => {
 // 			}
 	
 // 			const nicoVideos = JSON.parse(res.body).data.items;
-// 			const platformVideos = nicoVideos.map(nicoVideoJSONToPlatformVideo).filter(x => x);
+// 			const platformVideos = nicoVideos.map(nicoVideoToPlatformVideo).filter(x => x);
 	
 // 			return new RecommendedVideoPager({ videos: platformVideos, hasMore: false })
 // 		}
@@ -86,30 +87,38 @@ source.getContentDetails = function(videoUrl) {
 		throw new ScriptException("Failed request [" + url + "] (" + res.code + ")");
 	}
 
-	const platformVideo = nicoVideoXMLToPlatformVideo(res.body);
+	const platformVideo = nicoVideoDetailsToPlatformVideoDetails(res.body);
 
 	debugger;
 
 	return platformVideo;
 };
 
+source.isContentDetailsUrl = function(url) {
+	return NICO_URL_REGEX.test(url);
+};
+
 //#endregion
 
 //#region Parsing
 
-function nicoVideoXMLToPlatformVideo(xml) {
+function nicoVideoDetailsToPlatformVideoDetails(xml) {
 	const videoId = querySelectorXML(xml, "video_id");
 	const title = querySelectorXML(xml, "title");
 	const thumbnailUrl = querySelectorXML(xml, "thumbnail_url");
 	const duration = hhmmssToDuration(querySelectorXML(xml, "length"));
-	const viewCount = querySelectorXML(xml, "view_counter");
+	const viewCount = Number(querySelectorXML(xml, "view_counter"));
 	const videoUrl = querySelectorXML(xml, "watch_url");
 	const uploadDate = dateToUnixSeconds(querySelectorXML(xml, "first_retrieve"));
 	const authorId = querySelectorXML(xml, "user_id");
 	const authorName = querySelectorXML(xml, "user_nickname");
 	const authorImage = querySelectorXML(xml, "user_icon_url");
+	const description = querySelectorXML(xml, "description");
 
-	return new PlatformVideo({
+	// Closest thing to likes
+	const mylistBookmarks = Number(querySelectorXML(xml, "mylist_counter"));
+
+	return new PlatformVideoDetails({
 		id: videoId && new PlatformID(PLATFORM, videoId, config.id),
 		name: title,
 		thumbnails: thumbnailUrl && new Thumbnails([new Thumbnail(thumbnailUrl, 0)]),
@@ -125,10 +134,31 @@ function nicoVideoXMLToPlatformVideo(xml) {
 			`https://www.nicovideo.jp/user/${authorId}`,
 			authorImage
 		),
+		description,
+		rating: new RatingLikes(mylistBookmarks),
+		subtitles: [],
+		video: new VideoSourceDescriptor([
+			new HLSSource({
+				name: "Original 1",
+				// TODO
+				url: 'https://sample.vodobox.net/skate_phantom_flex_4k/skate_phantom_flex_4k.m3u8',
+				// url: 'https://delivery.domand.nicovideo.jp/hlsbid/65645149361105a0bdf1060a/playlists/variants/bac4c9f5d47c7002.m3u8?session=7d2ba710d1046156b233a9125370f7ffbac4c9f5d47c7002000000006569f2aede2ba7bfa636fe6d&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9kZWxpdmVyeS5kb21hbmQubmljb3ZpZGVvLmpwL2hsc2JpZC82NTY0NTE0OTM2MTEwNWEwYmRmMTA2MGEvcGxheWxpc3RzL3ZhcmlhbnRzL2JhYzRjOWY1ZDQ3YzcwMDIubTN1OFxcPyoiLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkFXUzpFcG9jaFRpbWUiOjE3MDE0NDIyMjJ9fX1dfQ__&Signature=s3yV4DKuNNUnMXoI~PeMrK3oRbF20q-XY~1yYqyz9mgvRnR4SuNc8aJG7KN3qZvy7wIluKYJrCKXbw1JkgA81Hw1G8CROknlEWZpmEzCeLF2U1nTQi6kl40iTr-~BoHeBIMnAzox15qXh2fkzZya2ZVKKVQgnC6yiki2pRFoYe9fT4ML41n5sOBM4QasFa7VEE7p1OpAByzlQmktrRY2GFb3YaKpymZ4m22CIIImJk1g8RMSCK~8gpVdLzbloYTPgGGFNOL0h5P2YF4cC3iTaJSXCDOxfHoYZxbiwXZJfuUpYJ6~sObzp8VFwE~4khZMl0B-43CLFhD1Okn6mq-YqQ__&Key-Pair-Id=K11RB80NFXU134',
+				duration,
+			})
+		]),
 	});
+
+	// this.description = obj.description ?? "";//String
+	// this.video = obj.video ?? {}; //VideoSourceDescriptor
+	// this.dash = obj.dash ?? null; //DashSource
+	// this.hls = obj.hls ?? null; //HLSSource
+	// this.live = obj.live ?? null; //VideoSource
+
+	// this.rating = obj.rating ?? null; //IRating
+	// this.subtitles = obj.subtitles ?? [];
 }
 
-function nicoVideoJSONToPlatformVideo(nicoVideo) {
+function nicoVideoToPlatformVideo(nicoVideo) {
 	const v = nicoVideo.content;
 
 	const videoUrl = `https://www.nicovideo.jp/watch/${v.id}`;
@@ -183,7 +213,7 @@ function getVideoIdFromUrl(url) {
     return null;
   }
 
-  const match = /.*nicovideo.jp\/watch\/(.*)/.exec(url);
+  const match = NICO_URL_REGEX.exec(url);
   return match ? match[1] : null;
 }
 
