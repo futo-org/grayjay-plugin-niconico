@@ -81,15 +81,26 @@ source.getContentDetails = function(videoUrl) {
 	const videoId = getVideoIdFromUrl(videoUrl)
 	const getThumbInfoUrl = `https://ext.nicovideo.jp/api/getthumbinfo/${videoId}`;
 
-	const res = http.GET(getThumbInfoUrl, {});
-	
-	if (!res.isOk) {
+	// For video details in XML format
+	let batchRequest = http.batch().GET(getThumbInfoUrl, {});
+	batchRequest = batchRequest.GET(videoUrl, {});
+	const [videoXMLRes, videoHTMLRes] = batchRequest.execute();
+
+	if (!videoXMLRes.isOk || !videoHTMLRes.isOk) {
 		throw new ScriptException("Failed request [" + url + "] (" + res.code + ")");
 	}
 
-	const platformVideo = nicoVideoDetailsToPlatformVideoDetails(res.body);
+	const videoXML = videoXMLRes.body;
+	const videoHTML = videoHTMLRes.body;
 
-	debugger;
+	// The HLS endpoint needs to be fetched separately
+	const { actionTrackId, accessRightKey } = getCSRFTokensFromVideoDetailHTML(videoHTML);
+	const hlsEndpoint = fetchHLSEndpoint({ videoId, actionTrackId, accessRightKey })
+
+	const platformVideo = nicoVideoDetailsToPlatformVideoDetails({ videoXML, hlsEndpoint });
+
+	// TODO
+	// debugger;
 
 	return platformVideo;
 };
@@ -102,60 +113,52 @@ source.isContentDetailsUrl = function(url) {
 
 //#region Parsing
 
-function nicoVideoDetailsToPlatformVideoDetails(xml) {
-	const videoId = querySelectorXML(xml, "video_id");
-	const title = querySelectorXML(xml, "title");
-	const thumbnailUrl = querySelectorXML(xml, "thumbnail_url");
-	const duration = hhmmssToDuration(querySelectorXML(xml, "length"));
-	const viewCount = Number(querySelectorXML(xml, "view_counter"));
-	const videoUrl = querySelectorXML(xml, "watch_url");
-	const uploadDate = dateToUnixSeconds(querySelectorXML(xml, "first_retrieve"));
-	const authorId = querySelectorXML(xml, "user_id");
-	const authorName = querySelectorXML(xml, "user_nickname");
-	const authorImage = querySelectorXML(xml, "user_icon_url");
-	const description = querySelectorXML(xml, "description");
+function nicoVideoDetailsToPlatformVideoDetails({ videoXML, hlsEndpoint }) {
+	// Helper function
+	const queryVideoXML = (tag) => querySelectorXML(videoXML, tag);
+
+	const videoId = queryVideoXML("video_id");
+	const thumbnailUrl = queryVideoXML("thumbnail_url");
+	const duration = hhmmssToDuration(queryVideoXML("length"));
+	const videoUrl = queryVideoXML("watch_url");
+	const authorId = queryVideoXML("user_id");
 
 	// Closest thing to likes
-	const mylistBookmarks = Number(querySelectorXML(xml, "mylist_counter"));
+	const mylistBookmarks = Number(queryVideoXML("mylist_counter"));
+
+	// Cannot support delivery.domand.nicovideo.jp yet because Exoplayer must send a domand_bid cookie
+	// with each request, this comes from Set-Cookie from the /access-rights endpoint
+	if (hlsEndpoint.includes("delivery.domand.nicovideo.jp")) {
+		throw new UnavailableException("Niconico videos from \"Domand\" are not yet supported.");
+	}
 
 	return new PlatformVideoDetails({
 		id: videoId && new PlatformID(PLATFORM, videoId, config.id),
-		name: title,
+		name: queryVideoXML("title"),
 		thumbnails: thumbnailUrl && new Thumbnails([new Thumbnail(thumbnailUrl, 0)]),
 		duration,
-		viewCount,
+		viewCount: Number(queryVideoXML("view_counter")),
 		url: videoUrl,
 		isLive: false,
-		uploadDate,
+		uploadDate: dateToUnixSeconds(queryVideoXML("first_retrieve")),
 		shareUrl: videoUrl,
 		author: new PlatformAuthorLink(
 			new PlatformID(PLATFORM, authorId, config.id),
-			authorName,
+			queryVideoXML("user_nickname"),
 			`https://www.nicovideo.jp/user/${authorId}`,
-			authorImage
+			queryVideoXML("user_icon_url")
 		),
-		description,
+		description: queryVideoXML("description"),
 		rating: new RatingLikes(mylistBookmarks),
 		subtitles: [],
 		video: new VideoSourceDescriptor([
 			new HLSSource({
-				name: "Original 1",
-				// TODO
-				url: 'https://sample.vodobox.net/skate_phantom_flex_4k/skate_phantom_flex_4k.m3u8',
-				// url: 'https://delivery.domand.nicovideo.jp/hlsbid/65645149361105a0bdf1060a/playlists/variants/bac4c9f5d47c7002.m3u8?session=7d2ba710d1046156b233a9125370f7ffbac4c9f5d47c7002000000006569f2aede2ba7bfa636fe6d&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9kZWxpdmVyeS5kb21hbmQubmljb3ZpZGVvLmpwL2hsc2JpZC82NTY0NTE0OTM2MTEwNWEwYmRmMTA2MGEvcGxheWxpc3RzL3ZhcmlhbnRzL2JhYzRjOWY1ZDQ3YzcwMDIubTN1OFxcPyoiLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkFXUzpFcG9jaFRpbWUiOjE3MDE0NDIyMjJ9fX1dfQ__&Signature=s3yV4DKuNNUnMXoI~PeMrK3oRbF20q-XY~1yYqyz9mgvRnR4SuNc8aJG7KN3qZvy7wIluKYJrCKXbw1JkgA81Hw1G8CROknlEWZpmEzCeLF2U1nTQi6kl40iTr-~BoHeBIMnAzox15qXh2fkzZya2ZVKKVQgnC6yiki2pRFoYe9fT4ML41n5sOBM4QasFa7VEE7p1OpAByzlQmktrRY2GFb3YaKpymZ4m22CIIImJk1g8RMSCK~8gpVdLzbloYTPgGGFNOL0h5P2YF4cC3iTaJSXCDOxfHoYZxbiwXZJfuUpYJ6~sObzp8VFwE~4khZMl0B-43CLFhD1Okn6mq-YqQ__&Key-Pair-Id=K11RB80NFXU134',
+				name: "Original",
+				url: hlsEndpoint,
 				duration,
 			})
 		]),
 	});
-
-	// this.description = obj.description ?? "";//String
-	// this.video = obj.video ?? {}; //VideoSourceDescriptor
-	// this.dash = obj.dash ?? null; //DashSource
-	// this.hls = obj.hls ?? null; //HLSSource
-	// this.live = obj.live ?? null; //VideoSource
-
-	// this.rating = obj.rating ?? null; //IRating
-	// this.subtitles = obj.subtitles ?? [];
 }
 
 function nicoVideoToPlatformVideo(nicoVideo) {
@@ -184,6 +187,52 @@ function nicoVideoToPlatformVideo(nicoVideo) {
 	};
 
 	return new PlatformVideo(platformVideo);
+}
+
+function getCSRFTokensFromVideoDetailHTML(html) {
+	// For getting actionTrackId and X-Access-Right-Key from the DOM, required for HLS requests
+	const dataDiv = /.*js-initial-watch-data.*/.exec(html)?.[0] || "";
+	const actionTrackId = /&quot;watchTrackId&quot;:&quot;(.*?)&quot;/.exec(dataDiv)?.[1];
+	const accessRightKey = /&quot;accessRightKey&quot;:&quot;(.*?)&quot;/.exec(dataDiv)?.[1];
+
+	if (!actionTrackId || !accessRightKey) {
+		throw new ScriptException(`Unable to play video, could not get CSRF tokens.`)
+	}
+
+	return { actionTrackId, accessRightKey };
+}
+
+function fetchHLSEndpoint({ videoId, actionTrackId, accessRightKey }) {
+	const url = `https://nvapi.nicovideo.jp/v1/watch/${videoId}/access-rights/hls?actionTrackId=${actionTrackId}`;
+
+	const res = http.POST(
+		url,
+		JSON.stringify({"outputs":[
+			["video-h264-1080p","audio-aac-192kbps"],
+			["video-h264-720p","audio-aac-192kbps"],
+			["video-h264-480p","audio-aac-192kbps"],
+			["video-h264-360p","audio-aac-192kbps"],
+			["video-h264-144p","audio-aac-192kbps"]
+		]}),
+		{
+			"X-Access-Right-Key": accessRightKey,
+			"X-Frontend-Id": "6",
+			"X-Frontend-Version": "0",
+			"X-Request-With": "https://www.nicovideo.jp",
+			"Content-Type": "application/x-www-form-urlencoded",
+			"Accept": "*/*"
+		}
+	);
+
+	const hlsEndpoint = JSON.parse(res.body)?.data?.contentUrl;
+
+	// TODO "{"meta":{"status":400,"errorCode":"INVALID_PARAMETER"}}"
+	// Every part of the request was validated, not sure why we're getting a 400
+	if (!hlsEndpoint) {
+		throw new ScriptException("Failed request [" + url + "] (" + res.code + ")");	
+	}
+
+	return hlsEndpoint;
 }
 
 //#endregion
@@ -227,7 +276,7 @@ function hhmmssToDuration(durationStr) {
     return null;
   }
 
-  const parts = durationStr.split(':').map(Number);
+  const parts = durationStr.split(":").map(Number);
 
   if (parts.some(isNaN)) {
     return null;
