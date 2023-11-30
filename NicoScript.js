@@ -12,37 +12,123 @@ source.enable = function(conf){
 	//log(config);
 }
 source.getHome = function() {
-	return new NicoVideoPager().nextPage();
+	class RecommendedVideoPager extends VideoPager {
+		constructor({ videos = [], hasMore = true, context = {} } = {}) {
+			super(videos, hasMore, context);
+		}
+		
+		nextPage() {
+			const res = http.GET(URL_RECOMMENDED_FEED, {});
+	
+			if (!res.isOk) {
+				throw new ScriptException("Failed request [" + URL_RECOMMENDED_FEED + "] (" + res.code + ")");
+			}
+	
+			const nicoVideos = JSON.parse(res.body).data.items;
+			const platformVideos = nicoVideos.map(nicoVideoJSONToPlatformVideo).filter(x => x);
+	
+			return new RecommendedVideoPager({ videos: platformVideos, hasMore: false })
+		}
+	}
+
+	return new RecommendedVideoPager().nextPage();
 };
 
-//#endregion
+source.searchSuggestions = function(query) {
+	const url = `https://sug.search.nicovideo.jp/suggestion/expand/${query}`
+	const res = http.GET(url, {})
 
-//#region Pagers
-
-class NicoVideoPager extends VideoPager {
-	constructor({ videos = [], hasMore = true, ctx = {} } = {}) {
-		super(videos, hasMore, ctx);
+	if (!res.isOk) {
+		throw new ScriptException("Failed request [" + url + "] (" + res.code + ")");
 	}
-	
-	nextPage() {
-		const res = http.GET(URL_RECOMMENDED_FEED, {});
 
-		if (!res.isOk) {
-	    throw new ScriptException("Failed request [" + URL_RECOMMENDED_FEED + "] (" + resp.code + ")");
-		}
+	const suggestions = JSON.parse(res.body).candidates;
 
-		const nicoVideos = JSON.parse(res.body).data.items;
-		const platformVideos = nicoVideos.map(nicoVideoToPlatformVideo).filter(x => x);
+	return suggestions;
+};
 
-		return new NicoVideoPager({ videos: platformVideos, hasMore: false })
-	}
+source.getSearchCapabilities = () => {
+	return { types: [Type.Feed.Mixed], sorts: [], filters: [] }
 }
+
+// source.search = function (query) {
+// 	class SearchVideoPager extends VideoPager {
+// 		constructor({ videos = [], hasMore = true, context = { query } } = {}) {
+// 			super(videos, hasMore, context);
+// 		}
+		
+// 		nextPage() {
+// 			const url = `asdf${query}`;
+	
+// 			const res = http.GET(url, {});
+	
+// 			if (!res.isOk) {
+// 				throw new ScriptException("Failed request [" + URL_SEARCH + "] (" + res.code + ")");
+// 			}
+	
+// 			const nicoVideos = JSON.parse(res.body).data.items;
+// 			const platformVideos = nicoVideos.map(nicoVideoJSONToPlatformVideo).filter(x => x);
+	
+// 			return new RecommendedVideoPager({ videos: platformVideos, hasMore: false })
+// 		}
+// 	}
+
+// 	return new SearchVideoPager({ query }).nextPage();
+// };
+
+source.getContentDetails = function(videoUrl) {
+	const videoId = getVideoIdFromUrl(videoUrl)
+	const getThumbInfoUrl = `https://ext.nicovideo.jp/api/getthumbinfo/${videoId}`;
+
+	const res = http.GET(getThumbInfoUrl, {});
+	
+	if (!res.isOk) {
+		throw new ScriptException("Failed request [" + url + "] (" + res.code + ")");
+	}
+
+	const platformVideo = nicoVideoXMLToPlatformVideo(res.body);
+
+	debugger;
+
+	return platformVideo;
+};
 
 //#endregion
 
 //#region Parsing
 
-function nicoVideoToPlatformVideo(nicoVideo) {
+function nicoVideoXMLToPlatformVideo(xml) {
+	const videoId = querySelectorXML(xml, "video_id");
+	const title = querySelectorXML(xml, "title");
+	const thumbnailUrl = querySelectorXML(xml, "thumbnail_url");
+	const duration = hhmmssToDuration(querySelectorXML(xml, "length"));
+	const viewCount = querySelectorXML(xml, "view_counter");
+	const videoUrl = querySelectorXML(xml, "watch_url");
+	const uploadDate = dateToUnixSeconds(querySelectorXML(xml, "first_retrieve"));
+	const authorId = querySelectorXML(xml, "user_id");
+	const authorName = querySelectorXML(xml, "user_nickname");
+	const authorImage = querySelectorXML(xml, "user_icon_url");
+
+	return new PlatformVideo({
+		id: videoId && new PlatformID(PLATFORM, videoId, config.id),
+		name: title,
+		thumbnails: thumbnailUrl && new Thumbnails([new Thumbnail(thumbnailUrl, 0)]),
+		duration,
+		viewCount,
+		url: videoUrl,
+		isLive: false,
+		uploadDate,
+		shareUrl: videoUrl,
+		author: new PlatformAuthorLink(
+			new PlatformID(PLATFORM, authorId, config.id),
+			authorName,
+			`https://www.nicovideo.jp/user/${authorId}`,
+			authorImage
+		),
+	});
+}
+
+function nicoVideoJSONToPlatformVideo(nicoVideo) {
 	const v = nicoVideo.content;
 
 	const videoUrl = `https://www.nicovideo.jp/watch/${v.id}`;
@@ -56,7 +142,7 @@ function nicoVideoToPlatformVideo(nicoVideo) {
 		duration: v.duration,
 		viewCount: v.count.view,
 		url: videoUrl,
-		isLive: false, // TODO There is v.videoLive but it seems always false
+		isLive: false,
 		uploadDate,
 		shareUrl: videoUrl,
 		author: new PlatformAuthorLink(
@@ -65,7 +151,7 @@ function nicoVideoToPlatformVideo(nicoVideo) {
 			`https://www.nicovideo.jp/user/${v.owner.id}`,
 			v.owner.iconUrl
 		),
-	}
+	};
 
 	return new PlatformVideo(platformVideo);
 }
@@ -85,6 +171,59 @@ function dateToUnixSeconds(date) {
 	}
 
 	return Math.round(Date.parse(date) / 1000);
+}
+
+/**
+ * Gets the video id from an URL
+ * @param {String?} url The URL
+ * @returns {String?} The video id
+ */
+function getVideoIdFromUrl(url) {
+  if (!url) {
+    return null;
+  }
+
+  const match = /.*nicovideo.jp\/watch\/(.*)/.exec(url);
+  return match ? match[1] : null;
+}
+
+/**
+ * Format a duration string to a duration in seconds
+ * @param {String?} duration Duration string format (hh:mm:ss)
+ * @returns {Number?} Duration in seconds
+ */
+function hhmmssToDuration(durationStr) {
+  if (!durationStr) {
+    return null;
+  }
+
+  const parts = durationStr.split(':').map(Number);
+
+  if (parts.some(isNaN)) {
+    return null;
+  }
+
+  if (parts.length == 3) {
+    return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
+  } else if (parts.length == 2) {
+    return (parts[0] * 60) + parts[1];
+  } else if (parts.length == 1) {
+    return parts[0];
+  }
+
+  return null;
+}
+
+/**
+ * Get text inside an XML tag
+ * @param {String?} xml XML document string
+ * @param {String?} tag XML tag to search for
+ * @returns {String?} Text inside XML tag
+ */
+function querySelectorXML(xml, tag) {
+	const xmlRegex = new RegExp(`<${tag}>(.*?)<\/${tag}>`, "g");
+	const innerText = xmlRegex.exec(xml);
+	return innerText?.[1] || null;
 }
 
 //#endregion
