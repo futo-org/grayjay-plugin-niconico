@@ -89,7 +89,9 @@ source.getContentDetails = function(videoUrl) {
 	const [videoXMLRes, videoHTMLRes] = batchRequest.execute();
 
 	if (!videoXMLRes.isOk || !videoHTMLRes.isOk) {
-		throw new ScriptException("Failed request [" + url + "] (" + res.code + ")");
+		const url = !videoXMLRes.isOk ? getThumbInfoUrl : videoUrl;
+		const code = !videoXMLRes.isOk ? videoXMLRes.code : videoHTMLRes.code;
+		throw new ScriptException("Failed request [" + url + "] (" + code + ")");
 	}
 
 	const videoXML = videoXMLRes.body;
@@ -97,7 +99,9 @@ source.getContentDetails = function(videoUrl) {
 
 	// The HLS endpoint needs to be fetched separately
 	const { actionTrackId, accessRightKey } = getCSRFTokensFromVideoDetailHTML(videoHTML);
-	const hlsEndpoint = fetchHLSEndpoint({ videoId, actionTrackId, accessRightKey })
+	// TODO Need to pass cookies to ExoPlayer for HLS stream to work, use dummy stream for now
+	// const hlsEndpoint = fetchHLSEndpoint({ videoId, actionTrackId, accessRightKey });
+	const hlsEndpoint = "http://sample.vodobox.net/skate_phantom_flex_4k/skate_phantom_flex_4k.m3u8";
 
 	const platformVideo = nicoVideoDetailsToPlatformVideoDetails({ videoXML, hlsEndpoint });
 
@@ -125,7 +129,7 @@ function nicoVideoDetailsToPlatformVideoDetails({ videoXML, hlsEndpoint }) {
 	// Closest thing to likes
 	const mylistBookmarks = Number(queryVideoXML("mylist_counter"));
 
-	// Cannot support delivery.domand.nicovideo.jp yet because Exoplayer must send a domand_bid cookie
+	// TODO Cannot support delivery.domand.nicovideo.jp yet because Exoplayer must send a domand_bid cookie
 	// with each request, this comes from Set-Cookie from the /access-rights endpoint
 	if (hlsEndpoint.includes("delivery.domand.nicovideo.jp")) {
 		throw new UnavailableException("Niconico videos from \"Domand\" are not yet supported.");
@@ -244,7 +248,6 @@ function fetchHLSEndpoint({ videoId, actionTrackId, accessRightKey }) {
 
 	const hlsEndpoint = JSON.parse(res.body)?.data?.contentUrl;
 
-	// TODO "{"meta":{"status":400,"errorCode":"INVALID_PARAMETER"}}"
 	// Every part of the request was validated, not sure why we're getting a 400
 	if (!hlsEndpoint) {
 		throw new ScriptException("Failed request [" + url + "] (" + res.code + ")");	
