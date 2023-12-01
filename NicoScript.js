@@ -307,7 +307,41 @@ function querySelectorXML(xml, tag) {
  * @returns {Object} Decoded JWT JSON
  */
 function parseJWT(jwt) {
-	return JSON.parse(atob(jwt.split('.')[1]));
+	return JSON.parse(base64ToAscii(jwt.split('.')[1]));
+}
+
+/**
+ * Base64 to ASCII (from ChatGPT)
+ * @param {String} base64String Base64 encoded string
+ * @returns {String} ASCII string
+ */
+function base64ToAscii(base64String) {
+	const base64Chars =
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+
+	let decoded = "";
+	let buffer = 0;
+	let bufferLength = 0;
+
+	for (let i = 0; i < base64String.length; i++) {
+			const charIndex = base64Chars.indexOf(base64String.charAt(i));
+
+			if (charIndex === -1) {
+					// Skip invalid characters
+					continue;
+			}
+
+			buffer = (buffer << 6) | charIndex;
+			bufferLength += 6;
+
+			if (bufferLength >= 8) {
+					bufferLength -= 8;
+					const charCode = (buffer >> bufferLength) & 0xff;
+					decoded += String.fromCharCode(charCode);
+			}
+	}
+
+	return decoded;
 }
 
 //#endregion
