@@ -2,208 +2,216 @@
 //Intended exclusively for auto-complete in your IDE, not for execution
 
 declare class ScriptException extends Error {
-  constructor(type: string, msg: string);
+  constructor(type: string, msg: string)
 }
 declare class TimeoutException extends ScriptException {
-  constructor(msg: string);
+  constructor(msg: string)
 }
 declare class UnavailableException extends ScriptException {
-  constructor(msg: string);
+  constructor(msg: string)
 }
 declare class ScriptImplementationException extends ScriptException {
-  constructor(msg: string);
+  constructor(msg: string)
 }
 
 declare class Thumbnails {
   constructor(thumbnails: Thumbnail[])
 }
 declare class Thumbnail {
-  constructor(url, quality) {
-      this.url = url ?? ""; //string
-      this.quality = quality ?? 0; //integer
-  }
+  url: string
+  quality: number
 }
 
 declare class PlatformID {
-  constructor(platform: string, id: string, pluginId: string, claimType: int = 0, claimFieldType: integer = -1);
+  constructor(
+    platform: string,
+    id: string,
+    pluginId: string,
+    claimType: number,
+    claimFieldType: number,
+  )
 }
 
 declare class ResultCapabilities {
   constructor(types: string[], sorts: string[], filters: FilterGroup[])
 }
 declare class FilterGroup {
-  constructor(name: string, filters: string[], isMultiSelect: boolean, id: string);
+  constructor(
+    name: string,
+    filters: string[],
+    isMultiSelect: boolean,
+    id: string,
+  )
 }
 declare class FilterCapability {
-  constructor(name: string, value: string, id: string);
+  constructor(name: string, value: string, id: string)
 }
 
-
 declare class PlatformAuthorLink {
-  constructor(id: PlatformID, name: string, url: string, thumbnail: string, subscribers: integer?);
+  constructor(
+    id: PlatformID,
+    name: string,
+    url: string,
+    thumbnail: string,
+    subscribers?: number,
+  )
 }
 
 declare interface PlatformContentDef {
-  id: PlatformID,
-  name: string,
-  author: PlatformAuthorLink,
-  datetime: integer,
+  id: PlatformID
+  name: string
+  author: PlatformAuthorLink
+  datetime: number
   url: string
 }
 declare interface PlatformNestedMediaContentDef extends PlatformContentDef {
-  contentUrl: string,
-  contentName: string?,
-  contentDescription: string?,
-  contentProvider: string?,
+  contentUrl: string
+  contentName?: string
+  contentDescription?: string
+  contentProvider?: string
   contentThumbnails: Thumbnails
 }
 declare class PlatformNestedMediaContent {
-  constructor(obj: PlatformNestedMediaContentDef);
+  constructor(obj: PlatformNestedMediaContentDef)
 }
 
 declare interface PlatformVideoDef extends PlatformContentDef {
-  thumbnails: Thumbnails,
-  author: PlatformAuthorLink,
+  thumbnails: Thumbnails
+  author: PlatformAuthorLink
 
-  duration: int,
-  viewCount: long,
+  duration: number
+  viewCount: number
   isLive: boolean
 }
 declare interface PlatformContent {}
 
 declare class PlatformVideo implements PlatformContent {
-  constructor(obj: PlatformVideoDef);
+  constructor(obj: PlatformVideoDef)
 }
 
-
 declare interface PlatformVideoDetailsDef extends PlatformVideoDef {
-  description: string,
-  video: VideoSourceDescriptor,
-  live: SubtitleSource[],
+  description: string
+  video: IVideoSourceDescriptor
+  live: SubtitleSource[]
   rating: IRating
 }
 declare class PlatformVideoDetails extends PlatformVideo {
-  constructor(obj: PlatformVideoDetailsDef);
+  constructor(obj: PlatformVideoDetailsDef)
 }
 
-declare class PlatformPostDef extends PlatformContentDef {
-  thumbnails: string[],
-  images: string[],
+declare class PlatformPostDef implements PlatformContentDef {
+  thumbnails: string[]
+  images: string[]
   description: string
 }
-declare class PlatformPost extends PlatformContent {
+declare class PlatformPost implements PlatformContent {
   constructor(obj: PlatformPostDef)
 }
 
 declare class PlatformPostDetailsDef extends PlatformPostDef {
-  rating: IRating,
-  textType: int,
-  content: String
+  rating: IRating
+  textType: number
+  content: string
 }
 declare class PlatformPostDetails extends PlatformPost {
-  constructor(obj: PlatformPostDetailsDef);
+  constructor(obj: PlatformPostDetailsDef)
 }
-
 
 //Sources
 declare interface IVideoSourceDescriptor {}
 
 declare interface MuxVideoSourceDescriptorDef {
-  isUnMuxed: boolean,
+  isUnMuxed: boolean
   videoSources: VideoSource[]
 }
 declare class MuxVideoSourceDescriptor implements IVideoSourceDescriptor {
-  constructor(obj: VideoSourceDescriptorDef);
+  constructor(obj: VideoSourceDescriptorDef)
 }
 
 declare interface UnMuxVideoSourceDescriptorDef {
-  isUnMuxed: boolean,
+  isUnMuxed: boolean
   videoSources: VideoSource[]
 }
 class UnMuxVideoSourceDescriptor implements IVideoSourceDescriptor {
-  constructor(videoSourcesOrObj: VideoSource[], audioSources: AudioSource[]);
-  constructor(videoSourcesOrObj: UnMuxVideoSourceDescriptorDef);
+  constructor(videoSourcesOrObj: VideoSource[], audioSources: AudioSource[])
+  constructor(videoSourcesOrObj: UnMuxVideoSourceDescriptorDef)
 }
 
-declare interface IVideoSource {
-
-}
-declare interface IAudioSource {
-
-}
-interface VideoUrlSourceDef implements IVideoSource {
-  width: integer,
-  height: integer,
-  container: string,
-  codec: string,
-  name: string,
-  bitrate: integer,
-  duration: integer,
+declare interface IVideoSource {}
+declare interface IAudioSource {}
+interface VideoUrlSourceDef extends IVideoSource {
+  width: number
+  height: number
+  container: string
+  codec: string
+  name: string
+  bitrate: number
+  duration: number
   url: string
 }
 class VideoUrlSource {
-  constructor(obj: VideoUrlSourceDef);
+  constructor(obj: VideoUrlSourceDef)
 
-  getRequestModifier(): RequestModifier?;
+  getRequestModifier(): RequestModifier | undefined
 }
 interface VideoUrlRangeSourceDef extends VideoUrlSource {
-  itagId: integer,
-  initStart: integer,
-  initEnd: integer,
-  indexStart: integer,
-  indexEnd: integer,
+  itagId: number
+  initStart: number
+  initEnd: number
+  indexStart: number
+  indexEnd: number
 }
 class VideoUrlRangeSource extends VideoUrlSource {
-  constructor(obj: YTVideoSourceDef);
+  constructor(obj: YTVideoSourceDef)
 }
 interface AudioUrlSourceDef {
-  name: string,
-  bitrate: integer,
-  container: string,
-  codecs: string,
-  duration: integer,
-  url: string,
+  name: string
+  bitrate: number
+  container: string
+  codecs: string
+  duration: number
+  url: string
   language: string
 }
 class AudioUrlSource implements IAudioSource {
-  constructor(obj: AudioUrlSourceDef);
+  constructor(obj: AudioUrlSourceDef)
 
-  getRequestModifier(): RequestModifier?;
+  getRequestModifier(): RequestModifier | undefined
 }
 interface IRequest {
-  url: string,
+  url: string
   headers: Map<string, string>
 }
 interface IRequestModifierDef {
   allowByteSkip: boolean
 }
 class RequestModifier {
-  constructor(obj: IRequestModifierDef) { }
+  constructor(obj: IRequestModifierDef) {}
 
-  modifyRequest(url: string, headers: Map<string, string>): IRequest;
+  modifyRequest(url: string, headers: Map<string, string>): IRequest
 }
 interface AudioUrlRangeSourceDef extends AudioUrlSource {
-  itagId: integer,
-  initStart: integer,
-  initEnd: integer,
-  indexStart: integer,
-  indexEnd: integer,
-  audioChannels: integer
+  itagId: number
+  initStart: number
+  initEnd: number
+  indexStart: number
+  indexEnd: number
+  audioChannels: number
 }
 class AudioUrlRangeSource extends AudioUrlSource {
-  constructor(obj: AudioUrlRangeSourceDef);
+  constructor(obj: AudioUrlRangeSourceDef)
 }
 interface HLSSourceDef {
-  name: string,
-  duration: integer,
+  name: string
+  duration: number
   url: string
 }
 class HLSSource implements IVideoSource {
-  constructor(obj: HLSSourceDef);
+  constructor(obj: HLSSourceDef)
 }
 interface DashSourceDef {
-  name: string,
-  duration: integer,
+  name: string
+  duration: number
   url: string
 }
 class DashSource implements IVideoSource {
@@ -212,156 +220,206 @@ class DashSource implements IVideoSource {
 
 //Channel
 interface PlatformChannelDef {
-  id: PlatformID,
-  name: string,
-  thumbnail: string,
-  banner: string,
-  subscribers: integer,
-  description: string,
-  url: string,
-  links: Map<string>?
+  id: PlatformID
+  name: string
+  thumbnail: string
+  banner: string
+  subscribers: number
+  description: string
+  url: string
+  links?: Map<string, string>
 }
 class PlatformChannel {
-  constructor(obj: PlatformChannelDef);
+  constructor(obj: PlatformChannelDef)
 }
 
 //Ratings
 interface IRating {
-  type: integer
+  type: number
 }
 declare class RatingLikes implements IRating {
-  constructor(likes: integer);
+  constructor(likes: number)
 }
 declare class RatingLikesDislikes implements IRating {
-  constructor(likes: integer, dislikes: integer);
+  constructor(likes: number, dislikes: number)
 }
 declare class RatingScaler implements IRating {
-  constructor(value: double);
+  constructor(value: number)
 }
 
 declare interface CommentDef {
-  contextUrl: string,
-  author: PlatformAuthorLink,
-  message: string,
-  rating: IRating,
-  date: long,
-  replyCount: int,
+  contextUrl: string
+  author: PlatformAuthorLink
+  message: string
+  rating: IRating
+  date: number
+  replyCount: number
   context: any
 }
 declare class PlatformComment {
-  constructor(obj: CommentDef);
+  constructor(obj: CommentDef)
 }
 
-
-
 declare class LiveEventPager {
-  nextRequest = 4000;
+  nextRequest = 4000
 
-  constructor(results: LiveEvent[], hasMore: boolean, context: any);
+  constructor(results: LiveEvent[], hasMore: boolean, context: any)
 
   hasMorePagers(): boolean
-  nextPage(): LiveEventPager; //Could be self
+  nextPage(): LiveEventPager //Could be self
 }
 
 class LiveEvent {
-  type: String
+  type: string
 }
 declare class LiveEventComment extends LiveEvent {
-  constructor(name: string, message: string, thumbnail: string?, colorName: string?, badges: string[]);
+  constructor(
+    name: string,
+    message: string,
+    thumbnail?: string,
+    colorName?: string,
+    badges: string[],
+  )
 }
 declare class LiveEventEmojis extends LiveEvent {
-  constructor(name: Map<string>);
+  constructor(name: Map<string, string>)
 }
-declare class LiveEventDonation extends LiveEvent  {
-  constructor(amount: integer, name: string, message: string, thumbnail: string?, expire: Int, colorDonation: string?);
+declare class LiveEventDonation extends LiveEvent {
+  constructor(
+    amount: number,
+    name: string,
+    message: string,
+    thumbnail?: string,
+    expire: number,
+    colorDonation?: string,
+  )
 }
 declare class LiveEventViewCount extends LiveEvent {
-  constructor(viewCount: integer);
+  constructor(viewCount: number)
 }
 declare class LiveEventRaid extends LiveEvent {
-  constructor(targetUrl: string, targetName: string, targetThumbnail: string);
+  constructor(targetUrl: string, targetName: string, targetThumbnail: string)
 }
-
-
 
 //Pagers
 declare class ContentPager {
-  constructor(results: PlatformContent[], hasMore: boolean);
+  constructor(results: PlatformContent[], hasMore: boolean)
 
   hasMorePagers(): boolean
-  nextPage(): VideoPager; //Could be self
+  nextPage(): VideoPager //Could be self
 }
 declare class VideoPager {
-  constructor(results: PlatformVideo[], hasMore: boolean);
+  constructor(results: PlatformVideo[], hasMore: boolean)
 
   hasMorePagers(): boolean
-  nextPage(): VideoPager; //Could be self
+  nextPage(): VideoPager //Could be self
 }
 declare class ChannelPager {
-  constructor(results: PlatformChannel[], hasMore: boolean);
-
-  hasMorePagers(): boolean;
-  nextPage(): ChannelPager; //Could be self
-}
-declare class CommentPager {
-  constructor(results: PlatformComment[], hasMore: boolean);
+  constructor(results: PlatformChannel[], hasMore: boolean)
 
   hasMorePagers(): boolean
-  nextPage(): CommentPager; //Could be self
+  nextPage(): ChannelPager //Could be self
 }
+declare class CommentPager {
+  constructor(results: PlatformComment[], hasMore: boolean)
 
-interface Map<T> {
-  [Key: string]: T;
+  hasMorePagers(): boolean
+  nextPage(): CommentPager //Could be self
 }
 
 //To override by plugin
 
 interface Source {
-  getHome(): VideoPager;
+  getHome(): VideoPager
 
-  enable(config: SourceConfig, settings: Any, savedState: string?);
-  disable();
+  enable(config: SourceConfig, settings: any, savedState?: string)
+  disable()
 
-  saveState(): string;
+  saveState(): string
 
-  searchSuggestions(query: string): string[];
-  search(query: string, type: string, order: string, filters): ContentPager;
+  searchSuggestions(query: string): string[]
+  search(query: string, type: string, order: string, filters): ContentPager
   getSearchCapabilities(): ResultCapabilities
 
   //Optional
-  searchChannelContents(channelUrl: string, query: string, type: string, order: string, filters): ContentPager;
+  searchChannelContents(
+    channelUrl: string,
+    query: string,
+    type: string,
+    order: string,
+    filters,
+  ): ContentPager
   //Optional
-  getSearchChannelContentsCapabilities(): ResultCapabilities;
+  getSearchChannelContentsCapabilities(): ResultCapabilities
 
   //Optional
-  getChannelUrlByClaim(claimType: int, values: Map<Int, String>)
+  getChannelUrlByClaim(claimType: number, values: Map<number, string>)
 
-  isChannelUrl(url: string): boolean;
-  getChannel(url: string): PlatformChannel;
+  isChannelUrl(url: string): boolean
+  getChannel(url: string): PlatformChannel
 
-  getChannelContents(url: string, type: string, order: string, filters): ContentPager;
-  getChannelCapabilities(): ResultCapabilities;
+  getChannelContents(
+    url: string,
+    type: string,
+    order: string,
+    filters,
+  ): ContentPager
+  getChannelCapabilities(): ResultCapabilities
 
-  isContentDetailsUrl(url: string): boolean;
-  getContentDetails(url: string): PlatformVideoDetails;
+  isContentDetailsUrl(url: string): boolean
+  getContentDetails(url: string): PlatformVideoDetails
 
-  getLiveEvents(url: string): LiveEventPager;
-
-  //Optional
-  getComments(url: string): CommentPager;
-  //Optional
-  getSubComments(comment: PlatformComment): CommentPager;
-
-  //Optional
-  getUserSubscriptions(): string[];
-  //Optional
-  getUserPlaylists(): string[];
+  getLiveEvents(url: string): LiveEventPager
 
   //Optional
-  isPlaylistUrl(url: string): boolean;
+  getComments(url: string): CommentPager
   //Optional
-  getPlaylist(url): string[];
+  getSubComments(comment: PlatformComment): CommentPager
+
+  //Optional
+  getUserSubscriptions(): string[]
+  //Optional
+  getUserPlaylists(): string[]
+
+  //Optional
+  isPlaylistUrl(url: string): boolean
+  //Optional
+  getPlaylist(url): string[]
 }
 
-const source: Source;
+interface BridgeHttpResponse {
+  url: string
+  code: number
+  body: string
+  isOk: string
+}
 
+interface Http {
+  GET(
+    url: string,
+    headers: Map<string, string>,
+    useAuthClient: Boolean,
+  ): BridgeHttpResponse
+  POST(
+    url: string,
+    body: string,
+    headers: Map<string, string>,
+    useAuthClient: Boolean,
+  ): BridgeHttpResponse
+  request(
+    method: string,
+    url: string,
+    headers: Map<string, string>,
+    useAuthClient: Boolean,
+  ): BridgeHttpResponse
+  requestWithBody(
+    method: string,
+    url: string,
+    body: string,
+    headers: Map<string, string>,
+    useAuthClient: Boolean,
+  ): BridgeHttpResponse
+}
+
+const source: Source
+const http: Http
