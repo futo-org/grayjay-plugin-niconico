@@ -99,9 +99,6 @@ source.getContentDetails = function(videoUrl) {
 
 	const platformVideo = nicoVideoDetailsToPlatformVideoDetails({ videoXML, hlsEndpoint });
 
-	// TODO
-	// debugger;
-
 	return platformVideo;
 };
 
@@ -191,7 +188,7 @@ function nicoVideoToPlatformVideo(nicoVideo) {
 
 function getCSRFTokensFromVideoDetailHTML(html) {
 	// For getting actionTrackId and X-Access-Right-Key from the DOM, required for HLS requests
-	const dataDiv = /.*js-initial-watch-data.*/.exec(html)?.[0] || "";
+	const dataDiv = /js-initial-watch-data.*/.exec(html)?.[0] || "";
 	const actionTrackId = /&quot;watchTrackId&quot;:&quot;(.*?)&quot;/.exec(dataDiv)?.[1];
 	const accessRightKey = /&quot;accessRightKey&quot;:&quot;(.*?)&quot;/.exec(dataDiv)?.[1];
 
@@ -205,15 +202,14 @@ function getCSRFTokensFromVideoDetailHTML(html) {
 function fetchHLSEndpoint({ videoId, actionTrackId, accessRightKey }) {
 	const url = `https://nvapi.nicovideo.jp/v1/watch/${videoId}/access-rights/hls?actionTrackId=${actionTrackId}`;
 
+	// This gives us the video/audio configurations we are allowed to request
+	const jwt = parseJWT(accessRightKey);
+	const videoOptions = jwt.v;
+	const audioOptions = jwt.a;
+
 	const res = http.POST(
 		url,
-		JSON.stringify({"outputs":[
-			["video-h264-1080p","audio-aac-192kbps"],
-			["video-h264-720p","audio-aac-192kbps"],
-			["video-h264-480p","audio-aac-192kbps"],
-			["video-h264-360p","audio-aac-192kbps"],
-			["video-h264-144p","audio-aac-192kbps"]
-		]}),
+		JSON.stringify({ outputs: videoOptions.map(option => [option, audioOptions[0]]) }),
 		{
 			"X-Access-Right-Key": accessRightKey,
 			"X-Frontend-Id": "6",
@@ -305,4 +301,15 @@ function querySelectorXML(xml, tag) {
 	return innerText?.[1] || null;
 }
 
+/**
+ * Parse Base64 encoded JWT
+ * @param {String} jwt Base64 encoded JWT
+ * @returns {Object} Decoded JWT JSON
+ */
+function parseJWT(jwt) {
+	return JSON.parse(atob(jwt.split('.')[1]));
+}
+
 //#endregion
+
+log("LOADED");
