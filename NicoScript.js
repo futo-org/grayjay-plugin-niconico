@@ -2,6 +2,8 @@ const PLATFORM = "Niconico";
 const PLATFORM_CLAIMTYPE = 21;
 
 const URL_RECOMMENDED_FEED = "https://nvapi.nicovideo.jp/v1/recommend?recipeId=video_recommendation_recommend&sensitiveContents=mask&site=nicovideo&_frontendId=6&_frontendVersion=0";
+const URL_SEARCH = "https://api.search.nicovideo.jp/api/v2/snapshot/video/contents/search?targets=title,description,tags&fields=contentId,title,userId,viewCounter,lengthSeconds,thumbnailUrl,startTime&_sort=-viewCounter&_offset=0&_limit=20&_context=app-d39af5e3e5bb";
+
 const NICO_URL_REGEX = /.*nicovideo.jp\/watch\/(.*)/;
 
 let config = {};
@@ -26,7 +28,7 @@ source.getHome = function() {
 			}
 	
 			const nicoVideos = JSON.parse(res.body).data.items;
-			const platformVideos = nicoVideos.map(nicoVideoToPlatformVideo).filter(x => x);
+			const platformVideos = nicoVideos.map(nicoRecommendedVideoToPlatformVideo).filter(x => x);
 	
 			return new RecommendedVideoPager({ videos: platformVideos, hasMore: false })
 		}
@@ -52,30 +54,30 @@ source.getSearchCapabilities = () => {
 	return { types: [Type.Feed.Mixed], sorts: [], filters: [] }
 }
 
-// source.search = function (query) {
-// 	class SearchVideoPager extends VideoPager {
-// 		constructor({ videos = [], hasMore = true, context = { query } } = {}) {
-// 			super(videos, hasMore, context);
-// 		}
+source.search = function (query) {
+	class SearchVideoPager extends VideoPager {
+		constructor({ videos = [], hasMore = true, context = {} } = {}) {
+			super(videos, hasMore, context);
+		}
 		
-// 		nextPage() {
-// 			const url = `asdf${query}`;
+		nextPage() {	
+			const res = http.POST(URL_SEARCH, `q=${encodeURIComponent(query)}`, {
+				"Content-Type": "application/x-www-form-urlencoded",
+			});
 	
-// 			const res = http.GET(url, {});
+			if (!res.isOk) {
+				throw new ScriptException("Failed request [" + URL_SEARCH + "] (" + res.code + ")");
+			}
 	
-// 			if (!res.isOk) {
-// 				throw new ScriptException("Failed request [" + URL_SEARCH + "] (" + res.code + ")");
-// 			}
+			const nicoVideos = JSON.parse(res.body).data;
+			const platformVideos = nicoVideos.map(nicoSearchVideoToPlatformVideo);
 	
-// 			const nicoVideos = JSON.parse(res.body).data.items;
-// 			const platformVideos = nicoVideos.map(nicoVideoToPlatformVideo).filter(x => x);
-	
-// 			return new RecommendedVideoPager({ videos: platformVideos, hasMore: false })
-// 		}
-// 	}
+			return new SearchVideoPager({ videos: platformVideos, hasMore: false })
+		}
+	}
 
-// 	return new SearchVideoPager({ query }).nextPage();
-// };
+	return new SearchVideoPager().nextPage();
+};
 
 source.getContentDetails = function(videoUrl) {
 	const videoId = getVideoIdFromUrl(videoUrl)
@@ -158,14 +160,36 @@ function nicoVideoDetailsToPlatformVideoDetails({ videoXML, hlsEndpoint }) {
 	});
 }
 
-function nicoVideoToPlatformVideo(nicoVideo) {
+function nicoSearchVideoToPlatformVideo(v) {
+	const videoUrl = `https://www.nicovideo.jp/watch/${v.contentId}`;
+	const authorId = String(v.userId);
+
+	return new PlatformVideo({
+		id: v.contentId && new PlatformID(PLATFORM, v.contentId, config.id),
+		name: v.title,
+		thumbnails: v.thumbnailUrl && new Thumbnails([new Thumbnail(v.thumbnailUrl, 0)]),
+		duration: v.lengthSeconds,
+		viewCount: v.viewCounter,
+		url: videoUrl,
+		isLive: false,
+		uploadDate: dateToUnixSeconds(v.startTime),
+		shareUrl: videoUrl,
+		author: new PlatformAuthorLink(
+			new PlatformID(PLATFORM, authorId, config.id),
+			"ニコニコ",
+			`https://www.nicovideo.jp/user/${authorId}`,
+			"https://play-lh.googleusercontent.com/_C1KxgGIw43g2Y2G8salrswvYqkkBum5896cCrFOWkgdAxZI10efI-oQxfWRfLOBysE"
+		),
+	});
+}
+
+function nicoRecommendedVideoToPlatformVideo(nicoVideo) {
 	const v = nicoVideo.content;
 
 	const videoUrl = `https://www.nicovideo.jp/watch/${v.id}`;
 	const thumbnailUrl = v.thumbnail.listingUrl;
-	const uploadDate = dateToUnixSeconds(v.registeredAt);
 
-	const platformVideo = {
+	return new PlatformVideo({
 		id: v.id && new PlatformID(PLATFORM, v.id, config.id),
 		name: v.title,
 		thumbnails: thumbnailUrl && new Thumbnails([new Thumbnail(thumbnailUrl, 0)]),
@@ -173,7 +197,7 @@ function nicoVideoToPlatformVideo(nicoVideo) {
 		viewCount: v.count.view,
 		url: videoUrl,
 		isLive: false,
-		uploadDate,
+		uploadDate: dateToUnixSeconds(v.registeredAt),
 		shareUrl: videoUrl,
 		author: new PlatformAuthorLink(
 			new PlatformID(PLATFORM, v.owner.id, config.id),
@@ -181,9 +205,7 @@ function nicoVideoToPlatformVideo(nicoVideo) {
 			`https://www.nicovideo.jp/user/${v.owner.id}`,
 			v.owner.iconUrl
 		),
-	};
-
-	return new PlatformVideo(platformVideo);
+	});
 }
 
 function getCSRFTokensFromVideoDetailHTML(html) {
@@ -307,7 +329,7 @@ function querySelectorXML(xml, tag) {
  * @returns {Object} Decoded JWT JSON
  */
 function parseJWT(jwt) {
-	return JSON.parse(base64ToAscii(jwt.split('.')[1]));
+	return JSON.parse(base64ToAscii(jwt.split(".")[1]));
 }
 
 /**
