@@ -10,10 +10,11 @@ let config = {};
 
 //#region Plugin Hooks
 
-source.enable = function(conf){
+source.enable = function(conf) {
 	config = conf ?? {};
 	//log(config);
-}
+};
+
 source.getHome = function() {
 	class RecommendedVideoPager extends VideoPager {
 		constructor({ videos = [], hasMore = true, context = {} } = {}) {
@@ -111,6 +112,42 @@ source.getContentDetails = function(videoUrl) {
 source.isContentDetailsUrl = function(url) {
 	return NICO_URL_REGEX.test(url);
 };
+
+// source.getComments = function (url) {
+
+// };
+
+// source.getSubComments = function (comment) {
+
+// };
+
+// source.getSearchChannelContentsCapabilities = function () {
+
+// };
+
+// source.searchChannelContents = function (channelUrl, query, type, order, filters) {
+
+// };
+
+// source.searchChannels = function (query) {
+
+// };
+
+// source.isChannelUrl = function(url) {
+
+// };
+
+// source.getChannel = function (url) {
+
+// };
+
+// source.getChannelContents = function (url) {
+
+// };
+
+// source.getChannelTemplateByClaimMap = () => {
+
+// };
 
 //#endregion
 
@@ -321,7 +358,7 @@ function hhmmssToDuration(durationStr) {
  * @returns {String?} Text inside XML tag
  */
 function querySelectorXML(xml, tag) {
-	const xmlRegex = new RegExp(`<${tag}>(.*?)<\/${tag}>`, "g");
+	const xmlRegex = new RegExp(`<${tag}>(.*?)</${tag}>`, "g");
 	const innerText = xmlRegex.exec(xml);
 	return innerText?.[1] || null;
 }
