@@ -122,7 +122,7 @@ declare interface IVideoSourceDescriptor {}
 
 declare interface MuxVideoSourceDescriptorDef {
   isUnMuxed: boolean
-  videoSources: VideoSource[]
+  videoSources: IVideoSource[]
 }
 declare class MuxVideoSourceDescriptor implements IVideoSourceDescriptor {
   constructor(obj: VideoSourceDescriptorDef)
@@ -130,10 +130,10 @@ declare class MuxVideoSourceDescriptor implements IVideoSourceDescriptor {
 
 declare interface UnMuxVideoSourceDescriptorDef {
   isUnMuxed: boolean
-  videoSources: VideoSource[]
+  videoSources: IVideoSource[]
 }
-class UnMuxVideoSourceDescriptor implements IVideoSourceDescriptor {
-  constructor(videoSourcesOrObj: VideoSource[], audioSources: AudioSource[])
+declare class UnMuxVideoSourceDescriptor implements IVideoSourceDescriptor {
+  constructor(videoSourcesOrObj: IVideoSource[], audioSources: IAudioSource[])
   constructor(videoSourcesOrObj: UnMuxVideoSourceDescriptorDef)
 }
 
@@ -149,7 +149,7 @@ interface VideoUrlSourceDef extends IVideoSource {
   duration: number
   url: string
 }
-class VideoUrlSource {
+declare class VideoUrlSource {
   constructor(obj: VideoUrlSourceDef)
 
   getRequestModifier(): RequestModifier | undefined
@@ -161,7 +161,7 @@ interface VideoUrlRangeSourceDef extends VideoUrlSource {
   indexStart: number
   indexEnd: number
 }
-class VideoUrlRangeSource extends VideoUrlSource {
+declare class VideoUrlRangeSource extends VideoUrlSource {
   constructor(obj: YTVideoSourceDef)
 }
 interface AudioUrlSourceDef {
@@ -173,7 +173,7 @@ interface AudioUrlSourceDef {
   url: string
   language: string
 }
-class AudioUrlSource implements IAudioSource {
+declare class AudioUrlSource implements IAudioSource {
   constructor(obj: AudioUrlSourceDef)
 
   getRequestModifier(): RequestModifier | undefined
@@ -185,8 +185,8 @@ interface IRequest {
 interface IRequestModifierDef {
   allowByteSkip: boolean
 }
-class RequestModifier {
-  constructor(obj: IRequestModifierDef) {}
+declare class RequestModifier {
+  constructor(obj: IRequestModifierDef)
 
   modifyRequest(url: string, headers: Map<string, string>): IRequest
 }
@@ -198,7 +198,7 @@ interface AudioUrlRangeSourceDef extends AudioUrlSource {
   indexEnd: number
   audioChannels: number
 }
-class AudioUrlRangeSource extends AudioUrlSource {
+declare class AudioUrlRangeSource extends AudioUrlSource {
   constructor(obj: AudioUrlRangeSourceDef)
 }
 interface HLSSourceDef {
@@ -206,7 +206,7 @@ interface HLSSourceDef {
   duration: number
   url: string
 }
-class HLSSource implements IVideoSource {
+declare class HLSSource implements IVideoSource {
   constructor(obj: HLSSourceDef)
 }
 interface DashSourceDef {
@@ -214,7 +214,7 @@ interface DashSourceDef {
   duration: number
   url: string
 }
-class DashSource implements IVideoSource {
+declare class DashSource implements IVideoSource {
   constructor(obj: DashSourceDef)
 }
 
@@ -229,7 +229,7 @@ interface PlatformChannelDef {
   url: string
   links?: Map<string, string>
 }
-class PlatformChannel {
+declare class PlatformChannel {
   constructor(obj: PlatformChannelDef)
 }
 
@@ -261,7 +261,7 @@ declare class PlatformComment {
 }
 
 declare class LiveEventPager {
-  nextRequest = 4000
+  nextRequest: number
 
   constructor(results: LiveEvent[], hasMore: boolean, context: any)
 
@@ -269,7 +269,7 @@ declare class LiveEventPager {
   nextPage(): LiveEventPager //Could be self
 }
 
-class LiveEvent {
+declare class LiveEvent {
   type: string
 }
 declare class LiveEventComment extends LiveEvent {
@@ -398,28 +398,29 @@ interface Http {
   GET(
     url: string,
     headers: Map<string, string>,
-    useAuthClient: Boolean,
+    useAuthClient: boolean,
   ): BridgeHttpResponse
   POST(
     url: string,
     body: string,
     headers: Map<string, string>,
-    useAuthClient: Boolean,
+    useAuthClient: boolean,
   ): BridgeHttpResponse
   request(
     method: string,
     url: string,
     headers: Map<string, string>,
-    useAuthClient: Boolean,
+    useAuthClient: boolean,
   ): BridgeHttpResponse
   requestWithBody(
     method: string,
     url: string,
     body: string,
     headers: Map<string, string>,
-    useAuthClient: Boolean,
+    useAuthClient: boolean,
   ): BridgeHttpResponse
 }
 
-const source: Source
-const http: Http
+declare const source: Source
+
+declare const http: Http
