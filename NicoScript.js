@@ -157,43 +157,40 @@ source.getComments = function (videoUrl) {
     )
   }
 
-  const comments =
+  const nicoComments =
     JSON.parse(videoCommentsRes.body).data.threads.find((x) => x.fork === 'main')?.comments || []
 
-  return new CommentPager(
-    comments.map((comment) => {
-      return new Comment({
-        contextUrl: videoUrl,
-        author: new PlatformAuthorLink(
-          new PlatformID(PLATFORM, comment.id, config.id, PLATFORM_CLAIMTYPE),
-          '', // TODO
-          `https://www.nicovideo.jp/user/${comment.userId}`,
-          '', // TODO
-        ),
-        message: comment.body,
-        rating: new RatingLikes(comment.score),
-        date: dateToUnixSeconds(comment.postedAt),
-        replyCount: 0, // Does not exist
-      })
-    }),
-    false,
-  )
+  const comments = nicoComments.map((comment) => {
+    return new Comment({
+      contextUrl: videoUrl,
+      author: new PlatformAuthorLink(
+        new PlatformID(PLATFORM, comment.id, config.id, PLATFORM_CLAIMTYPE),
+        '', // Does not exist on comments endpoint
+        `https://www.nicovideo.jp/user/${comment.userId}`,
+        '', // Does not exist on comments endpoint
+      ),
+      message: comment.body,
+      rating: new RatingLikes(comment.score),
+      date: dateToUnixSeconds(comment.postedAt),
+      replyCount: 0, // Does not exist
+    })
+  })
+
+  // Reverse comments for proper date order
+  return new CommentPager(comments.toReversed(), false)
 }
 
 // Does not exist
 // source.getSubComments = function (comment) {};
 
-// source.getSearchChannelContentsCapabilities = function () {
+// Does not exist
+// source.getSearchChannelContentsCapabilities = function () {}
 
-// };
+// Does not exist
+// source.searchChannelContents = function (channelUrl, query, type, order, filters) {}
 
-// source.searchChannelContents = function (channelUrl, query, type, order, filters) {
-
-// };
-
-// source.searchChannels = function (query) {
-
-// };
+// Does not exist
+// source.searchChannels = function (query) {}
 
 source.isChannelUrl = function (url) {
   return NICO_CHANNEL_URL_REGEX.test(url)
