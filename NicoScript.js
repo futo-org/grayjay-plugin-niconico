@@ -35,7 +35,7 @@ source.getHome = function () {
       const nicoVideos = JSON.parse(res.body).data.items
       const platformVideos = nicoVideos
         .map(nicoRecommendedVideoToPlatformVideo)
-        .filter((x) => x)
+        .filter((x) => x != null)
 
       return new RecommendedVideoPager({
         videos: platformVideos,
@@ -328,7 +328,7 @@ function fetchHLSEndpoint({ videoId, actionTrackId, accessRightKey }) {
 
 /**
  * Convert a Date to a unix time stamp
- * @param {Date?} date Date to convert
+ * @param {string} date Date to convert
  * @returns {Number?} Unix time stamp
  */
 function dateToUnixSeconds(date) {
@@ -355,7 +355,7 @@ function getVideoIdFromUrl(url) {
 
 /**
  * Format a duration string to a duration in seconds
- * @param {String?} duration Duration string format (hh:mm:ss)
+ * @param {string?} durationStr Duration string format (hh:mm:ss)
  * @returns {Number?} Duration in seconds
  */
 function hhmmssToDuration(durationStr) {

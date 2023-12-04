@@ -2,7 +2,7 @@
 //Intended exclusively for auto-complete in your IDE, not for execution
 
 declare class ScriptException extends Error {
-  constructor(type: string, msg: string)
+  constructor(type: string, msg?: string)
 }
 declare class TimeoutException extends ScriptException {
   constructor(msg: string)
@@ -180,7 +180,7 @@ declare class AudioUrlSource implements IAudioSource {
 }
 interface IRequest {
   url: string
-  headers: Map<string, string>
+  headers: { [key: string]: string }
 }
 interface IRequestModifierDef {
   allowByteSkip: boolean
@@ -188,7 +188,7 @@ interface IRequestModifierDef {
 declare class RequestModifier {
   constructor(obj: IRequestModifierDef)
 
-  modifyRequest(url: string, headers: Map<string, string>): IRequest
+  modifyRequest(url: string, headers: { [key: string]: string }): IRequest
 }
 interface AudioUrlRangeSourceDef extends AudioUrlSource {
   itagId: number
@@ -227,7 +227,7 @@ interface PlatformChannelDef {
   subscribers: number
   description: string
   url: string
-  links?: Map<string, string>
+  links?: { [key: string]: string }
 }
 declare class PlatformChannel {
   constructor(obj: PlatformChannelDef)
@@ -282,7 +282,7 @@ declare class LiveEventComment extends LiveEvent {
   )
 }
 declare class LiveEventEmojis extends LiveEvent {
-  constructor(name: Map<string, string>)
+  constructor(name: { [key: string]: string })
 }
 declare class LiveEventDonation extends LiveEvent {
   constructor(
@@ -309,7 +309,7 @@ declare class ContentPager {
   nextPage(): VideoPager //Could be self
 }
 declare class VideoPager {
-  constructor(results: PlatformVideo[], hasMore: boolean)
+  constructor(results: PlatformVideo[], hasMore: boolean, context: any)
 
   hasMorePagers(): boolean
   nextPage(): VideoPager //Could be self
@@ -387,6 +387,8 @@ interface Source {
   getPlaylist(url): string[]
 }
 
+declare const source: Source
+
 interface BridgeHttpResponse {
   url: string
   code: number
@@ -394,33 +396,39 @@ interface BridgeHttpResponse {
   isOk: string
 }
 
-interface Http {
+interface HttpCommon<ReturnType> {
   GET(
     url: string,
-    headers: Map<string, string>,
-    useAuthClient: boolean,
-  ): BridgeHttpResponse
+    headers: { [key: string]: string },
+    useAuthClient?: boolean,
+  ): ReturnType
   POST(
     url: string,
     body: string,
-    headers: Map<string, string>,
-    useAuthClient: boolean,
-  ): BridgeHttpResponse
+    headers: { [key: string]: string },
+    useAuthClient?: boolean,
+  ): ReturnType
   request(
     method: string,
     url: string,
-    headers: Map<string, string>,
+    headers: { [key: string]: string },
     useAuthClient: boolean,
-  ): BridgeHttpResponse
+  ): ReturnType
   requestWithBody(
     method: string,
     url: string,
     body: string,
-    headers: Map<string, string>,
+    headers: { [key: string]: string },
     useAuthClient: boolean,
-  ): BridgeHttpResponse
+  ): ReturnType
 }
 
-declare const source: Source
+interface HttpBatchBuilder extends HttpCommon<HttpBatchBuilder> {
+  execute(): BridgeHttpResponse[]
+}
+
+interface Http extends HttpCommon<BridgeHttpResponse> {
+  batch(): HttpBatchBuilder
+}
 
 declare const http: Http
