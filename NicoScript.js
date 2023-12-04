@@ -3,10 +3,13 @@ const PLATFORM_CLAIMTYPE = 21
 
 const URL_RECOMMENDED_FEED =
   'https://nvapi.nicovideo.jp/v1/recommend?recipeId=video_recommendation_recommend&sensitiveContents=mask&site=nicovideo&_frontendId=6&_frontendVersion=0'
+
+// Docs: https://site.nicovideo.jp/search-api-docs/snapshot
 const URL_SEARCH =
   'https://api.search.nicovideo.jp/api/v2/snapshot/video/contents/search?targets=title,description,tags&fields=contentId,title,userId,viewCounter,lengthSeconds,thumbnailUrl,startTime&_sort=-viewCounter&_offset=0&_limit=20&_context=app-d39af5e3e5bb'
 
-const NICO_URL_REGEX = /.*nicovideo.jp\/watch\/(.*)/
+const NICO_VIDEO_URL_REGEX = /.*nicovideo.jp\/watch\/(.*)/
+const NICO_CHANNEL_URL_REGEX = /.*nicovideo.jp\/user\/(.*)/
 
 let config = {}
 
@@ -32,10 +35,8 @@ source.getHome = function () {
         )
       }
 
-      const nicoVideos = JSON.parse(res.body).data.items
-      const platformVideos = nicoVideos
-        .map(nicoRecommendedVideoToPlatformVideo)
-        .filter((x) => x != null)
+      const nicoVideos = JSON.parse(res.body).data.items.map((x) => x.content)
+      const platformVideos = nicoVideos.map(nicoVideoToPlatformVideo)
 
       return new RecommendedVideoPager({
         videos: platformVideos,
@@ -93,6 +94,7 @@ source.search = function (query) {
 
 source.getContentDetails = function (videoUrl) {
   const videoId = getVideoIdFromUrl(videoUrl)
+  // Docs: https://w.atwiki.jp/nicoapi/pages/16.html
   const getThumbInfoUrl = `https://ext.nicovideo.jp/api/getthumbinfo/${videoId}`
 
   // For video details in XML format
@@ -126,7 +128,7 @@ source.getContentDetails = function (videoUrl) {
 }
 
 source.isContentDetailsUrl = function (url) {
-  return NICO_URL_REGEX.test(url)
+  return NICO_VIDEO_URL_REGEX.test(url)
 }
 
 // source.getComments = function (url) {
@@ -149,17 +151,62 @@ source.isContentDetailsUrl = function (url) {
 
 // };
 
-// source.isChannelUrl = function(url) {
+source.isChannelUrl = function (url) {
+  return NICO_CHANNEL_URL_REGEX.test(url)
+}
 
-// };
+source.getChannel = function (url) {
+  const res = http.GET(url, {})
+  const user = getUserDataFromHTML(res.body)
+  return new PlatformChannel({
+    id: new PlatformID(
+      PLATFORM,
+      String(user.id),
+      config.id,
+      PLATFORM_CLAIMTYPE,
+    ),
+    name: user.nickname,
+    thumbnail: user.icons?.large,
+    banner: user.coverImage?.smartphoneUrl,
+    subscribers: user.followerCount || 0,
+    description: unescapeHtmlEntities(user.strippedDescription),
+    url,
+    // Not implemented in-app
+    links: user.sns.map((social) => social.url) || [],
+  })
+}
 
-// source.getChannel = function (url) {
+source.getChannelContents = function (channelUrl) {
+  class ChannelVideoPager extends VideoPager {
+    constructor({ videos = [], hasMore = true, context = {} } = {}) {
+      super(videos, hasMore, context)
+    }
 
-// };
+    nextPage() {
+      const userId = getUserIdFromURL(channelUrl)
+      const searchUrl = `https://nvapi.nicovideo.jp/v3/users/${userId}/videos?sortKey=registeredAt&sortOrder=desc&sensitiveContents=mask&pageSize=100&page=1`
+      const res = http.GET(searchUrl, {
+        'X-Frontend-Id': '6',
+      })
 
-// source.getChannelContents = function (url) {
+      if (!res.isOk) {
+        throw new ScriptException(
+          'Failed request [' + searchUrl + '] (' + res.code + ')',
+        )
+      }
 
-// };
+      const nicoVideos = JSON.parse(res.body).data.items.map((x) => x.essential)
+      const platformVideos = nicoVideos.map(nicoVideoToPlatformVideo)
+
+      return new ChannelVideoPager({
+        videos: platformVideos,
+        hasMore: false,
+      })
+    }
+  }
+
+  return new ChannelVideoPager().nextPage()
+}
 
 // source.getChannelTemplateByClaimMap = () => {
 
@@ -191,7 +238,9 @@ function nicoVideoDetailsToPlatformVideoDetails({ videoXML, hlsEndpoint }) {
   }
 
   return new PlatformVideoDetails({
-    id: videoId && new PlatformID(PLATFORM, videoId, config.id),
+    id:
+      videoId &&
+      new PlatformID(PLATFORM, videoId, config.id, PLATFORM_CLAIMTYPE),
     name: queryVideoXML('title'),
     thumbnails:
       thumbnailUrl && new Thumbnails([new Thumbnail(thumbnailUrl, 0)]),
@@ -202,12 +251,12 @@ function nicoVideoDetailsToPlatformVideoDetails({ videoXML, hlsEndpoint }) {
     uploadDate: dateToUnixSeconds(queryVideoXML('first_retrieve')),
     shareUrl: videoUrl,
     author: new PlatformAuthorLink(
-      new PlatformID(PLATFORM, authorId, config.id),
+      new PlatformID(PLATFORM, authorId, config.id, PLATFORM_CLAIMTYPE),
       queryVideoXML('user_nickname'),
       `https://www.nicovideo.jp/user/${authorId}`,
       queryVideoXML('user_icon_url'),
     ),
-    description: queryVideoXML('description'),
+    description: unescapeHtmlEntities(queryVideoXML('description')),
     rating: new RatingLikes(mylistBookmarks),
     subtitles: [],
     video: new VideoSourceDescriptor([
@@ -225,7 +274,9 @@ function nicoSearchVideoToPlatformVideo(v) {
   const authorId = String(v.userId)
 
   return new PlatformVideo({
-    id: v.contentId && new PlatformID(PLATFORM, v.contentId, config.id),
+    id:
+      v.contentId &&
+      new PlatformID(PLATFORM, v.contentId, config.id, PLATFORM_CLAIMTYPE),
     name: v.title,
     thumbnails:
       v.thumbnailUrl && new Thumbnails([new Thumbnail(v.thumbnailUrl, 0)]),
@@ -236,7 +287,7 @@ function nicoSearchVideoToPlatformVideo(v) {
     uploadDate: dateToUnixSeconds(v.startTime),
     shareUrl: videoUrl,
     author: new PlatformAuthorLink(
-      new PlatformID(PLATFORM, authorId, config.id),
+      new PlatformID(PLATFORM, authorId, config.id, PLATFORM_CLAIMTYPE),
       'ニコニコ',
       `https://www.nicovideo.jp/user/${authorId}`,
       'https://play-lh.googleusercontent.com/_C1KxgGIw43g2Y2G8salrswvYqkkBum5896cCrFOWkgdAxZI10efI-oQxfWRfLOBysE',
@@ -244,14 +295,12 @@ function nicoSearchVideoToPlatformVideo(v) {
   })
 }
 
-function nicoRecommendedVideoToPlatformVideo(nicoVideo) {
-  const v = nicoVideo.content
-
+function nicoVideoToPlatformVideo(v) {
   const videoUrl = `https://www.nicovideo.jp/watch/${v.id}`
   const thumbnailUrl = v.thumbnail.listingUrl
 
   return new PlatformVideo({
-    id: v.id && new PlatformID(PLATFORM, v.id, config.id),
+    id: v.id && new PlatformID(PLATFORM, v.id, config.id, PLATFORM_CLAIMTYPE),
     name: v.title,
     thumbnails:
       thumbnailUrl && new Thumbnails([new Thumbnail(thumbnailUrl, 0)]),
@@ -262,7 +311,7 @@ function nicoRecommendedVideoToPlatformVideo(nicoVideo) {
     uploadDate: dateToUnixSeconds(v.registeredAt),
     shareUrl: videoUrl,
     author: new PlatformAuthorLink(
-      new PlatformID(PLATFORM, v.owner.id, config.id),
+      new PlatformID(PLATFORM, v.owner.id, config.id, PLATFORM_CLAIMTYPE),
       v.owner.name,
       `https://www.nicovideo.jp/user/${v.owner.id}`,
       v.owner.iconUrl,
@@ -270,15 +319,20 @@ function nicoRecommendedVideoToPlatformVideo(nicoVideo) {
   })
 }
 
+function getUserDataFromHTML(html) {
+  const urlEncodedData = /data-initial-data="(.*?)"/.exec(html)?.[1] || ''
+  const userPageData = JSON.parse(urlEncodedData.replace(/&quot;/g, '"'))
+  const userObj = userPageData?.state?.userDetails?.userDetails?.user
+  return userObj
+}
+
 function getCSRFTokensFromVideoDetailHTML(html) {
+  const urlEncodedData = /data-api-data="(.*?)"/.exec(html)?.[1] || ''
+  const pageData = JSON.parse(urlEncodedData.replace(/&quot;/g, '"'))
+
   // For getting actionTrackId and X-Access-Right-Key from the DOM, required for HLS requests
-  const dataDiv = /js-initial-watch-data.*/.exec(html)?.[0] || ''
-  const actionTrackId = /&quot;watchTrackId&quot;:&quot;(.*?)&quot;/.exec(
-    dataDiv,
-  )?.[1]
-  const accessRightKey = /&quot;accessRightKey&quot;:&quot;(.*?)&quot;/.exec(
-    dataDiv,
-  )?.[1]
+  const actionTrackId = pageData.client.watchTrackId
+  const accessRightKey = pageData.media.domand.accessRightKey
 
   if (!actionTrackId || !accessRightKey) {
     throw new ScriptException(
@@ -349,8 +403,37 @@ function getVideoIdFromUrl(url) {
     return null
   }
 
-  const match = NICO_URL_REGEX.exec(url)
+  const match = NICO_VIDEO_URL_REGEX.exec(url)
   return match ? match[1] : null
+}
+
+/**
+ * Gets the video id from an URL
+ * @param {String?} url The URL
+ * @returns {String?} The video id
+ */
+function getUserIdFromURL(url) {
+  if (!url) {
+    return null
+  }
+
+  const match = NICO_CHANNEL_URL_REGEX.exec(url)
+  return match ? match[1] : null
+}
+
+/**
+ * Unescape common HTML entities without using DOMParser
+ * @param {string} htmlString
+ * @returns {string} Unescaped string
+ */
+function unescapeHtmlEntities(htmlString) {
+  return htmlString
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ')
 }
 
 /**
