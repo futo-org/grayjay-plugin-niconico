@@ -169,7 +169,7 @@ source.getChannel = function (url) {
     thumbnail: user.icons?.large,
     banner: user.coverImage?.smartphoneUrl,
     subscribers: user.followerCount || 0,
-    description: user.strippedDescription,
+    description: unescapeHtmlEntities(user.strippedDescription),
     url,
     // Not implemented in-app
     links: user.sns.map((social) => social.url) || [],
@@ -256,7 +256,7 @@ function nicoVideoDetailsToPlatformVideoDetails({ videoXML, hlsEndpoint }) {
       `https://www.nicovideo.jp/user/${authorId}`,
       queryVideoXML('user_icon_url'),
     ),
-    description: queryVideoXML('description'),
+    description: unescapeHtmlEntities(queryVideoXML('description')),
     rating: new RatingLikes(mylistBookmarks),
     subtitles: [],
     video: new VideoSourceDescriptor([
