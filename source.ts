@@ -81,9 +81,7 @@ class CaptchaRequiredException extends Error {
   url: any
   body: any
   constructor(url, body) {
-    super(
-      JSON.stringify({ plugin_type: 'CaptchaRequiredException', url, body }),
-    )
+    super(JSON.stringify({ plugin_type: 'CaptchaRequiredException', url, body }))
     this.plugin_type = 'CaptchaRequiredException'
     this.url = url
     this.body = body
@@ -853,8 +851,7 @@ function parseSettings(settings) {
   if (!settings) return {}
   const newSettings = {}
   for (const key in settings) {
-    if (typeof settings[key] == 'string')
-      newSettings[key] = JSON.parse(settings[key])
+    if (typeof settings[key] == 'string') newSettings[key] = JSON.parse(settings[key])
     else newSettings[key] = settings[key]
   }
   return newSettings
@@ -970,11 +967,7 @@ interface BridgeHttpResponse {
 }
 
 interface HttpCommon<ReturnType> {
-  GET(
-    url: string,
-    headers: { [key: string]: string },
-    useAuthClient?: boolean,
-  ): ReturnType
+  GET(url: string, headers: { [key: string]: string }, useAuthClient?: boolean): ReturnType
   POST(
     url: string,
     body: string,

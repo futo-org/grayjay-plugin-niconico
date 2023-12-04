@@ -78,9 +78,7 @@ source.search = function (query) {
       })
 
       if (!res.isOk) {
-        throw new ScriptException(
-          'Failed request [' + URL_SEARCH + '] (' + res.code + ')',
-        )
+        throw new ScriptException('Failed request [' + URL_SEARCH + '] (' + res.code + ')')
       }
 
       const nicoVideos = JSON.parse(res.body).data
@@ -113,12 +111,10 @@ source.getContentDetails = function (videoUrl) {
   const videoHTML = videoHTMLRes.body
 
   // The HLS endpoint needs to be fetched separately
-  const { actionTrackId, accessRightKey } =
-    getCSRFTokensFromVideoDetailHTML(videoHTML)
+  const { actionTrackId, accessRightKey } = getCSRFTokensFromVideoDetailHTML(videoHTML)
   // TODO Need to pass cookies to ExoPlayer for HLS stream to work, use dummy stream for now
   // const hlsEndpoint = fetchHLSEndpoint({ videoId, actionTrackId, accessRightKey });
-  const hlsEndpoint =
-    'http://sample.vodobox.net/skate_phantom_flex_4k/skate_phantom_flex_4k.m3u8'
+  const hlsEndpoint = 'http://sample.vodobox.net/skate_phantom_flex_4k/skate_phantom_flex_4k.m3u8'
 
   const platformVideo = nicoVideoDetailsToPlatformVideoDetails({
     videoXML,
@@ -136,14 +132,11 @@ source.getComments = function (videoUrl) {
   const videoHTMLRes = http.GET(videoUrl, {})
 
   if (!videoHTMLRes.isOk) {
-    throw new ScriptException(
-      'Failed request [' + videoUrl + '] (' + videoHTMLRes.code + ')',
-    )
+    throw new ScriptException('Failed request [' + videoUrl + '] (' + videoHTMLRes.code + ')')
   }
 
   // Need data embedded in video HTML to make comments request
-  const encodedPageData =
-    /data-api-data="(.*?)"/.exec(videoHTMLRes.body)?.[1] || ''
+  const encodedPageData = /data-api-data="(.*?)"/.exec(videoHTMLRes.body)?.[1] || ''
   const pageData = JSON.parse(encodedPageData.replace(/&quot;/g, '"'))
 
   const videoCommentsRes = http.POST(
@@ -165,9 +158,7 @@ source.getComments = function (videoUrl) {
   }
 
   const comments =
-    JSON.parse(videoCommentsRes.body).data.threads.find(
-      (x) => x.fork === 'main',
-    )?.comments || []
+    JSON.parse(videoCommentsRes.body).data.threads.find((x) => x.fork === 'main')?.comments || []
 
   return new CommentPager(
     comments.map((comment) => {
@@ -212,12 +203,7 @@ source.getChannel = function (url) {
   const res = http.GET(url, {})
   const user = getUserDataFromHTML(res.body)
   return new PlatformChannel({
-    id: new PlatformID(
-      PLATFORM,
-      String(user.id),
-      config.id,
-      PLATFORM_CLAIMTYPE,
-    ),
+    id: new PlatformID(PLATFORM, String(user.id), config.id, PLATFORM_CLAIMTYPE),
     name: user.nickname,
     thumbnail: user.icons?.large,
     banner: user.coverImage?.smartphoneUrl,
@@ -243,9 +229,7 @@ source.getChannelContents = function (channelUrl) {
       })
 
       if (!res.isOk) {
-        throw new ScriptException(
-          'Failed request [' + searchUrl + '] (' + res.code + ')',
-        )
+        throw new ScriptException('Failed request [' + searchUrl + '] (' + res.code + ')')
       }
 
       const nicoVideos = JSON.parse(res.body).data.items.map((x) => x.essential)
@@ -285,18 +269,13 @@ function nicoVideoDetailsToPlatformVideoDetails({ videoXML, hlsEndpoint }) {
   // TODO Cannot support delivery.domand.nicovideo.jp yet because Exoplayer must send a domand_bid cookie
   // with each request, this comes from Set-Cookie from the /access-rights endpoint
   if (hlsEndpoint.includes('delivery.domand.nicovideo.jp')) {
-    throw new UnavailableException(
-      'Niconico videos from "Domand" are not yet supported.',
-    )
+    throw new UnavailableException('Niconico videos from "Domand" are not yet supported.')
   }
 
   return new PlatformVideoDetails({
-    id:
-      videoId &&
-      new PlatformID(PLATFORM, videoId, config.id, PLATFORM_CLAIMTYPE),
+    id: videoId && new PlatformID(PLATFORM, videoId, config.id, PLATFORM_CLAIMTYPE),
     name: queryVideoXML('title'),
-    thumbnails:
-      thumbnailUrl && new Thumbnails([new Thumbnail(thumbnailUrl, 0)]),
+    thumbnails: thumbnailUrl && new Thumbnails([new Thumbnail(thumbnailUrl, 0)]),
     duration,
     viewCount: Number(queryVideoXML('view_counter')),
     url: videoUrl,
@@ -327,12 +306,9 @@ function nicoSearchVideoToPlatformVideo(v) {
   const authorId = String(v.userId)
 
   return new PlatformVideo({
-    id:
-      v.contentId &&
-      new PlatformID(PLATFORM, v.contentId, config.id, PLATFORM_CLAIMTYPE),
+    id: v.contentId && new PlatformID(PLATFORM, v.contentId, config.id, PLATFORM_CLAIMTYPE),
     name: v.title,
-    thumbnails:
-      v.thumbnailUrl && new Thumbnails([new Thumbnail(v.thumbnailUrl, 0)]),
+    thumbnails: v.thumbnailUrl && new Thumbnails([new Thumbnail(v.thumbnailUrl, 0)]),
     duration: v.lengthSeconds,
     viewCount: v.viewCounter,
     url: videoUrl,
@@ -355,8 +331,7 @@ function nicoVideoToPlatformVideo(v) {
   return new PlatformVideo({
     id: v.id && new PlatformID(PLATFORM, v.id, config.id, PLATFORM_CLAIMTYPE),
     name: v.title,
-    thumbnails:
-      thumbnailUrl && new Thumbnails([new Thumbnail(thumbnailUrl, 0)]),
+    thumbnails: thumbnailUrl && new Thumbnails([new Thumbnail(thumbnailUrl, 0)]),
     duration: v.duration,
     viewCount: v.count.view,
     url: videoUrl,
@@ -388,9 +363,7 @@ function getCSRFTokensFromVideoDetailHTML(html) {
   const accessRightKey = pageData.media.domand.accessRightKey
 
   if (!actionTrackId || !accessRightKey) {
-    throw new ScriptException(
-      `Unable to play video, could not get CSRF tokens.`,
-    )
+    throw new ScriptException(`Unable to play video, could not get CSRF tokens.`)
   }
 
   return { actionTrackId, accessRightKey }
@@ -543,8 +516,7 @@ function parseJWT(jwt) {
  * @returns {String} ASCII string
  */
 function base64ToAscii(base64String) {
-  const base64Chars =
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/='
+  const base64Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/='
 
   let decoded = ''
   let buffer = 0
