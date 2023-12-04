@@ -7,6 +7,7 @@ const URL_RECOMMENDED_FEED =
 // Docs: https://site.nicovideo.jp/search-api-docs/snapshot
 const URL_SEARCH =
   'https://api.search.nicovideo.jp/api/v2/snapshot/video/contents/search?targets=title,description,tags&fields=contentId,title,userId,viewCounter,lengthSeconds,thumbnailUrl,startTime&_sort=-viewCounter&_offset=0&_limit=20&_context=app-d39af5e3e5bb'
+const URL_COMMENTS = 'https://nv-comment.nicovideo.jp/v1/threads'
 
 const NICO_VIDEO_URL_REGEX = /.*nicovideo.jp\/watch\/(.*)/
 const NICO_CHANNEL_URL_REGEX = /.*nicovideo.jp\/user\/(.*)/
@@ -131,13 +132,65 @@ source.isContentDetailsUrl = function (url) {
   return NICO_VIDEO_URL_REGEX.test(url)
 }
 
-// source.getComments = function (url) {
+source.getComments = function (videoUrl) {
+  const videoHTMLRes = http.GET(videoUrl, {})
 
-// };
+  if (!videoHTMLRes.isOk) {
+    throw new ScriptException(
+      'Failed request [' + videoUrl + '] (' + videoHTMLRes.code + ')',
+    )
+  }
 
-// source.getSubComments = function (comment) {
+  // Need data embedded in video HTML to make comments request
+  const encodedPageData =
+    /data-api-data="(.*?)"/.exec(videoHTMLRes.body)?.[1] || ''
+  const pageData = JSON.parse(encodedPageData.replace(/&quot;/g, '"'))
 
-// };
+  const videoCommentsRes = http.POST(
+    URL_COMMENTS,
+    JSON.stringify({
+      params: pageData.comment.nvComment.params,
+      threadKey: pageData.comment.nvComment.threadKey,
+      additionals: {},
+    }),
+    {
+      'x-frontend-id': '6',
+    },
+  )
+
+  if (!videoCommentsRes.isOk) {
+    throw new ScriptException(
+      'Failed request [' + URL_COMMENTS + '] (' + videoCommentsRes.code + ')',
+    )
+  }
+
+  const comments =
+    JSON.parse(videoCommentsRes.body).data.threads.find(
+      (x) => x.fork === 'main',
+    )?.comments || []
+
+  return new CommentPager(
+    comments.map((comment) => {
+      return new Comment({
+        contextUrl: videoUrl,
+        author: new PlatformAuthorLink(
+          new PlatformID(PLATFORM, comment.id, config.id, PLATFORM_CLAIMTYPE),
+          '', // TODO
+          `https://www.nicovideo.jp/user/${comment.userId}`,
+          '', // TODO
+        ),
+        message: comment.body,
+        rating: new RatingLikes(comment.score),
+        date: dateToUnixSeconds(comment.postedAt),
+        replyCount: 0, // Does not exist
+      })
+    }),
+    false,
+  )
+}
+
+// Does not exist
+// source.getSubComments = function (comment) {};
 
 // source.getSearchChannelContentsCapabilities = function () {
 
@@ -320,15 +373,15 @@ function nicoVideoToPlatformVideo(v) {
 }
 
 function getUserDataFromHTML(html) {
-  const urlEncodedData = /data-initial-data="(.*?)"/.exec(html)?.[1] || ''
-  const userPageData = JSON.parse(urlEncodedData.replace(/&quot;/g, '"'))
+  const encodedPageData = /data-initial-data="(.*?)"/.exec(html)?.[1] || ''
+  const userPageData = JSON.parse(encodedPageData.replace(/&quot;/g, '"'))
   const userObj = userPageData?.state?.userDetails?.userDetails?.user
   return userObj
 }
 
 function getCSRFTokensFromVideoDetailHTML(html) {
-  const urlEncodedData = /data-api-data="(.*?)"/.exec(html)?.[1] || ''
-  const pageData = JSON.parse(urlEncodedData.replace(/&quot;/g, '"'))
+  const encodedPageData = /data-api-data="(.*?)"/.exec(html)?.[1] || ''
+  const pageData = JSON.parse(encodedPageData.replace(/&quot;/g, '"'))
 
   // For getting actionTrackId and X-Access-Right-Key from the DOM, required for HLS requests
   const actionTrackId = pageData.client.watchTrackId

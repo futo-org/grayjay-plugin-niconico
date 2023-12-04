@@ -843,10 +843,8 @@ const source = {
     return false
   },
   getContentDetails(url) {}, //TODO
-
-  //OPTIONAL getComments(url){ return new Pager([], false, {}); }, //TODO
-  //OPTIONAL getSubComments(comment){ return new Pager([], false, {}); }, //TODO
-
+  getComments(url) {},
+  getSubComments(comment) {},
   //OPTIONAL getSubscriptionsUser(){ return []; },
   //OPTIONAL getPlaylistsUser(){ return []; }
 }
