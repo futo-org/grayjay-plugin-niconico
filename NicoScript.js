@@ -8,6 +8,7 @@ const URL_RECOMMENDED_FEED =
 const URL_SEARCH =
   'https://api.search.nicovideo.jp/api/v2/snapshot/video/contents/search?targets=title,description,tags&fields=contentId,title,userId,viewCounter,lengthSeconds,thumbnailUrl,startTime&_sort=-viewCounter&_offset=0&_limit=20&_context=app-d39af5e3e5bb'
 const URL_COMMENTS = 'https://nv-comment.nicovideo.jp/v1/threads'
+const URL_FOLLOWING = 'https://nvapi.nicovideo.jp/v1/users/me/following/users?pageSize=100'
 
 const NICO_VIDEO_URL_REGEX = /.*nicovideo.jp\/watch\/(.*)/
 const NICO_CHANNEL_URL_REGEX = /.*nicovideo.jp\/user\/(.*)/
@@ -242,9 +243,26 @@ source.getChannelContents = function (channelUrl) {
   return new ChannelVideoPager().nextPage()
 }
 
-// source.getChannelTemplateByClaimMap = () => {
+source.getUserSubscriptions = () => {
+  if (!bridge.isLoggedIn()) {
+    bridge.log('Failed to retrieve subscriptions page because not logged in.')
+    return []
+  }
 
-// };
+  const res = http.GET(
+    URL_FOLLOWING,
+    {
+      'X-Frontend-Id': '6',
+    },
+    true,
+  )
+
+  const followingUrls = JSON.parse(res.body).data.items.map((x) => {
+    return `https://www.nicovideo.jp/user/${x.id}`
+  })
+
+  return followingUrls
+}
 
 //#endregion
 

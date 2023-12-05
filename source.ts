@@ -2,6 +2,7 @@ const IS_TESTING = false
 
 declare const bridge: {
   log(value: any)
+  isLoggedIn()
 }
 
 const Type = {
@@ -840,11 +841,11 @@ const source = {
   isContentDetailsUrl(url) {
     return false
   },
-  getContentDetails(url) {}, //TODO
+  getContentDetails(url) {},
   getComments(url) {},
   getSubComments(comment) {},
-  //OPTIONAL getSubscriptionsUser(){ return []; },
-  //OPTIONAL getPlaylistsUser(){ return []; }
+  getUserPlaylists() {},
+  getUserSubscriptions() {},
 }
 
 function parseSettings(settings) {
