@@ -31,7 +31,7 @@ source.getHome = function () {
     }
 
     nextPage() {
-      const res = http.GET(URL_RECOMMENDED_FEED, {})
+      const res = http.GET(URL_RECOMMENDED_FEED, {}, bridge.isLoggedIn())
 
       if (!res.isOk) {
         throw new ScriptException(
