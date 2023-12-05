@@ -1,26 +1,30 @@
 {
-	"name": "ニコニコ",
-	"description": "日本最大級の動画サービス、ニコニコ（niconico）。",
-	"author": "FUTO",
-	"authorUrl": "https://futo.org",
+  "name": "ニコニコ",
+  "description": "日本最大級の動画サービス、ニコニコ（niconico）。",
+  "author": "FUTO",
+  "authorUrl": "https://futo.org",
 
-	"platformUrl": "https://www.nicovideo.jp/",
-	"sourceUrl": "https://plugins.grayjay.app/Niconico/NicoConfig.json",
-	"repositoryUrl": "https://futo.org",
-	"scriptUrl": "./NicoScript.js",
-	"version": 1,
-	
-	"iconUrl": "./niconico.png",
-	"id": "94c86b48-eee9-4d49-9f2e-56c8e650936a",
-	
-	"scriptSignature": "",
-	"scriptPublicKey": "",
-	"packages": ["Http"],
-	
-	"allowEval": false,
-	"allowUrls": [
-		"everywhere"
-	],
+  "platformUrl": "https://www.nicovideo.jp/",
+  "sourceUrl": "https://plugins.grayjay.app/Niconico/NicoConfig.json",
+  "repositoryUrl": "https://futo.org",
+  "scriptUrl": "./NicoScript.js",
+  "version": 1,
 
-	"supportedClaimTypes": [21]
+  "iconUrl": "./niconico.png",
+  "id": "94c86b48-eee9-4d49-9f2e-56c8e650936a",
+
+  "scriptSignature": "",
+  "scriptPublicKey": "",
+  "packages": ["Http"],
+
+  "allowEval": false,
+  "allowUrls": ["everywhere"],
+
+  "authentication": {
+    "userAgent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.5481.153 Mobile Safari/537.36",
+    "loginUrl": "https://account.nicovideo.jp/login?site=niconico&next_url=%2F&sec=header_pc&cmnhd_ref=device%3Dpc%26site%3Dniconico%26pos%3Dheader_login%26page%3Dtop",
+    "cookiesToFind": ["user_session"]
+  },
+
+  "supportedClaimTypes": [21]
 }
