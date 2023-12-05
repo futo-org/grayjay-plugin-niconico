@@ -34,9 +34,7 @@ source.getHome = function () {
       const res = http.GET(URL_RECOMMENDED_FEED, {}, bridge.isLoggedIn())
 
       if (!res.isOk) {
-        throw new ScriptException(
-          'Failed request [' + URL_RECOMMENDED_FEED + '] (' + res.code + ')',
-        )
+        throw new ScriptException(`Failed request [${URL_RECOMMENDED_FEED}] (${res.code})`)
       }
 
       const nicoVideos = JSON.parse(res.body).data.items.map((x) => x.content)
@@ -57,7 +55,7 @@ source.searchSuggestions = function (query) {
   const res = http.GET(url, {})
 
   if (!res.isOk) {
-    throw new ScriptException('Failed request [' + url + '] (' + res.code + ')')
+    throw new ScriptException(`Failed request [${url}] (${res.code})`)
   }
 
   const suggestions = JSON.parse(res.body).candidates
@@ -81,7 +79,7 @@ source.search = function (query) {
       })
 
       if (!res.isOk) {
-        throw new ScriptException('Failed request [' + URL_SEARCH + '] (' + res.code + ')')
+        throw new ScriptException(`Failed request [${URL_SEARCH}] (${res.code})`)
       }
 
       const nicoVideos = JSON.parse(res.body).data
@@ -109,10 +107,12 @@ source.getContentDetails = function (videoUrl) {
     },
   ])
 
-  if (!videoXMLRes.isOk || !videoHTMLRes.isOk) {
-    const url = !videoXMLRes.isOk ? getThumbInfoUrl : videoUrl
-    const code = !videoXMLRes.isOk ? videoXMLRes.code : videoHTMLRes.code
-    throw new ScriptException('Failed request [' + url + '] (' + code + ')')
+  if (!videoXMLRes.isOk) {
+    throw new ScriptException(`Failed request [${getThumbInfoUrl}] (${videoXMLRes.code})`)
+  }
+
+  if (!videoHTMLRes.isOk) {
+    throw new ScriptException(`Failed request [${videoUrl}] (${videoHTMLRes.code})`)
   }
 
   const videoXML = videoXMLRes.body
@@ -140,7 +140,7 @@ source.getComments = function (videoUrl) {
   const videoHTMLRes = http.GET(videoUrl, {})
 
   if (!videoHTMLRes.isOk) {
-    throw new ScriptException('Failed request [' + videoUrl + '] (' + videoHTMLRes.code + ')')
+    throw new ScriptException(`Failed request [${videoUrl}] (${videoHTMLRes.code})`)
   }
 
   // Need data embedded in video HTML to make comments request
@@ -160,9 +160,7 @@ source.getComments = function (videoUrl) {
   )
 
   if (!videoCommentsRes.isOk) {
-    throw new ScriptException(
-      'Failed request [' + URL_COMMENTS + '] (' + videoCommentsRes.code + ')',
-    )
+    throw new ScriptException(`Failed request [${URL_COMMENTS}] (${videoCommentsRes.code})`)
   }
 
   const nicoComments =
@@ -206,6 +204,11 @@ source.isChannelUrl = function (url) {
 
 source.getChannel = function (url) {
   const res = http.GET(url, {})
+
+  if (!res.isOk) {
+    throw new ScriptException(`Failed request [${url}] (${res.code})`)
+  }
+
   const user = getUserDataFromHTML(res.body)
   return new PlatformChannel({
     id: new PlatformID(PLATFORM, String(user.id), config.id, PLATFORM_CLAIMTYPE),
@@ -234,7 +237,7 @@ source.getChannelContents = function (channelUrl) {
       })
 
       if (!res.isOk) {
-        throw new ScriptException('Failed request [' + searchUrl + '] (' + res.code + ')')
+        throw new ScriptException(`Failed request [${searchUrl}] (${res.code})`)
       }
 
       const nicoVideos = JSON.parse(res.body).data.items.map((x) => x.essential)
@@ -256,27 +259,36 @@ source.isPlaylistUrl = (url) => {
 
 source.getPlaylist = (playlistUrl) => {
   const playlistId = getPlaylistIdFromURL(playlistUrl)
+  const playlistApiUrl = `https://nvapi.nicovideo.jp/v1/users/me/mylists/${playlistId}?pageSize=100&page=1`
 
   if (!bridge.isLoggedIn()) {
     bridge.log('Failed to retrieve playlist, not logged in.')
     return null
   }
 
-  const [playlistHttpRes, playlistJsonRes] = batchRequest([
+  const [playlistHttpRes, playlistApiRes] = batchRequest([
     {
       url: playlistUrl,
       headers: { 'X-Frontend-Id': '6' },
       auth: true,
     },
     {
-      url: `https://nvapi.nicovideo.jp/v1/users/me/mylists/${playlistId}?pageSize=100&page=1`,
+      url: playlistApiUrl,
       headers: { 'X-Frontend-Id': '6' },
       auth: true,
     },
   ])
 
-  const nicoPlaylist = JSON.parse(playlistJsonRes.body).data.mylist
-  const platformVideos = nicoPlaylist.items.map(nicoVideoToPlatformVideo)
+  if (!playlistHttpRes.isOk) {
+    throw new ScriptException(`Failed request [${playlistUrl}] (${playlistHttpRes.code})`)
+  }
+
+  if (!playlistApiRes.isOk) {
+    throw new ScriptException(`Failed request [${playlistApiUrl}] (${playlistApiRes.code})`)
+  }
+
+  const nicoPlaylist = JSON.parse(playlistApiRes.body).data.mylist
+  const platformVideos = nicoPlaylist.items.map((x) => x.video).map(nicoVideoToPlatformVideo)
 
   // Get user from embedded HTML
   const encodedPageData = /data-common-header="(.*?)"/.exec(playlistHttpRes.body)?.[1] || ''
@@ -307,6 +319,10 @@ source.getUserPlaylists = () => {
 
   const res = http.GET(URL_PLAYLISTS, { 'X-Frontend-Id': '6' }, true)
 
+  if (!res.isOk) {
+    throw new ScriptException(`Failed request [${URL_PLAYLISTS}] (${res.code})`)
+  }
+
   const playlistUrls = JSON.parse(res.body).data.mylists.map(
     (playlist) => `https://www.nicovideo.jp/my/mylist/${playlist.id}`,
   )
@@ -327,6 +343,10 @@ source.getUserSubscriptions = () => {
     },
     true,
   )
+
+  if (!res.isOk) {
+    throw new ScriptException(`Failed request [${URL_FOLLOWING}] (${res.code})`)
+  }
 
   const followingUrls = JSON.parse(res.body).data.items.map((x) => {
     return `https://www.nicovideo.jp/user/${x.id}`
@@ -478,11 +498,15 @@ function fetchHLSEndpoint({ videoId, actionTrackId, accessRightKey }) {
     },
   )
 
+  if (!res.isOk) {
+    throw new ScriptException(`Failed request [${url}] (${res.code})`)
+  }
+
   const hlsEndpoint = JSON.parse(res.body)?.data?.contentUrl
 
   // Every part of the request was validated, not sure why we're getting a 400
   if (!hlsEndpoint) {
-    throw new ScriptException('Failed request [' + url + '] (' + res.code + ')')
+    throw new ScriptException(`Failed request [${url}] (${res.code})`)
   }
 
   return hlsEndpoint
