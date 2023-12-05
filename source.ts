@@ -825,10 +825,10 @@ const source = {
   //OPTIONAL getSearchChannelContentsCapabilities(){ return { types: [], sorts: [] }; },
   //OPTIONAL searchChannelContents(channelUrl, query, type, order, filters){ return new Pager([], false, {}); }, //TODO
 
-  isChannelUrl(url) {
+  isChannelUrl(url: string) {
     return false
   },
-  getChannel(url) {
+  getChannel(url: string) {
     return null
   },
   getChannelCapabilities() {
@@ -838,12 +838,14 @@ const source = {
     return new ContentPager([], false, {})
   },
 
-  isContentDetailsUrl(url) {
+  isContentDetailsUrl(url: string) {
     return false
   },
-  getContentDetails(url) {},
-  getComments(url) {},
+  getContentDetails(url: string) {},
+  getComments(url: string) {},
   getSubComments(comment) {},
+  isPlaylistUrl(url: string) {},
+  getPlaylist(url: string) {},
   getUserPlaylists() {},
   getUserSubscriptions() {},
 }

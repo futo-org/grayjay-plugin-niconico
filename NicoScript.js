@@ -9,9 +9,11 @@ const URL_SEARCH =
   'https://api.search.nicovideo.jp/api/v2/snapshot/video/contents/search?targets=title,description,tags&fields=contentId,title,userId,viewCounter,lengthSeconds,thumbnailUrl,startTime&_sort=-viewCounter&_offset=0&_limit=20&_context=app-d39af5e3e5bb'
 const URL_COMMENTS = 'https://nv-comment.nicovideo.jp/v1/threads'
 const URL_FOLLOWING = 'https://nvapi.nicovideo.jp/v1/users/me/following/users?pageSize=100'
+const URL_PLAYLISTS = 'https://nvapi.nicovideo.jp/v1/users/me/mylists'
 
 const NICO_VIDEO_URL_REGEX = /.*nicovideo.jp\/watch\/(.*)/
 const NICO_CHANNEL_URL_REGEX = /.*nicovideo.jp\/user\/(.*)/
+const NICO_PLAYLIST_URL_REGEX = /.*nicovideo.jp\/my\/mylist\/(.*)/
 
 let config = {}
 
@@ -98,9 +100,14 @@ source.getContentDetails = function (videoUrl) {
   const getThumbInfoUrl = `https://ext.nicovideo.jp/api/getthumbinfo/${videoId}`
 
   // For video details in XML format
-  let batchRequest = http.batch().GET(getThumbInfoUrl, {})
-  batchRequest = batchRequest.GET(videoUrl, {})
-  const [videoXMLRes, videoHTMLRes] = batchRequest.execute()
+  const [videoXMLRes, videoHTMLRes] = batchRequest([
+    {
+      url: getThumbInfoUrl,
+    },
+    {
+      url: videoUrl,
+    },
+  ])
 
   if (!videoXMLRes.isOk || !videoHTMLRes.isOk) {
     const url = !videoXMLRes.isOk ? getThumbInfoUrl : videoUrl
@@ -243,9 +250,73 @@ source.getChannelContents = function (channelUrl) {
   return new ChannelVideoPager().nextPage()
 }
 
+source.isPlaylistUrl = (url) => {
+  return NICO_PLAYLIST_URL_REGEX.test(url)
+}
+
+source.getPlaylist = (playlistUrl) => {
+  const playlistId = getPlaylistIdFromURL(playlistUrl)
+
+  if (!bridge.isLoggedIn()) {
+    bridge.log('Failed to retrieve playlist, not logged in.')
+    return null
+  }
+
+  const [playlistHttpRes, playlistJsonRes] = batchRequest([
+    {
+      url: playlistUrl,
+      headers: { 'X-Frontend-Id': '6' },
+      auth: true,
+    },
+    {
+      url: `https://nvapi.nicovideo.jp/v1/users/me/mylists/${playlistId}?pageSize=100&page=1`,
+      headers: { 'X-Frontend-Id': '6' },
+      auth: true,
+    },
+  ])
+
+  const nicoPlaylist = JSON.parse(playlistJsonRes.body).data.mylist
+  const platformVideos = nicoPlaylist.items.map(nicoVideoToPlatformVideo)
+
+  // Get user from embedded HTML
+  const encodedPageData = /data-common-header="(.*?)"/.exec(playlistHttpRes.body)?.[1] || ''
+  const pageData = JSON.parse(encodedPageData.replace(/&quot;/g, '"'))
+  const user = pageData.initConfig.user
+
+  return new PlatformPlaylistDetails({
+    url: playlistUrl,
+    id: new PlatformID(PLATFORM, playlistId, config.id),
+    author: new PlatformAuthorLink(
+      new PlatformID(PLATFORM, user.id, config.id, PLATFORM_CLAIMTYPE),
+      user.nickname,
+      `https://www.nicovideo.jp/user/${user.id}`,
+      user.iconUrl,
+    ),
+    name: nicoPlaylist.name,
+    thumbnail: null,
+    videoCount: platformVideos.length,
+    contents: new VideoPager(platformVideos, false),
+  })
+}
+
+source.getUserPlaylists = () => {
+  if (!bridge.isLoggedIn()) {
+    bridge.log('Failed to retrieve playlists, not logged in.')
+    return []
+  }
+
+  const res = http.GET(URL_PLAYLISTS, { 'X-Frontend-Id': '6' }, true)
+
+  const playlistUrls = JSON.parse(res.body).data.mylists.map(
+    (playlist) => `https://www.nicovideo.jp/my/mylist/${playlist.id}`,
+  )
+
+  return playlistUrls
+}
+
 source.getUserSubscriptions = () => {
   if (!bridge.isLoggedIn()) {
-    bridge.log('Failed to retrieve subscriptions page because not logged in.')
+    bridge.log('Failed to retrieve subscriptions, not logged in.')
     return []
   }
 
@@ -449,9 +520,9 @@ function getVideoIdFromUrl(url) {
 }
 
 /**
- * Gets the video id from an URL
+ * Gets the user id from an URL
  * @param {String?} url The URL
- * @returns {String?} The video id
+ * @returns {String?} The user id
  */
 function getUserIdFromURL(url) {
   if (!url) {
@@ -459,6 +530,20 @@ function getUserIdFromURL(url) {
   }
 
   const match = NICO_CHANNEL_URL_REGEX.exec(url)
+  return match ? match[1] : null
+}
+
+/**
+ * Gets the playlist id from an URL
+ * @param {String?} url The URL
+ * @returns {String?} The playlist id
+ */
+function getPlaylistIdFromURL(url) {
+  if (!url) {
+    return null
+  }
+
+  const match = NICO_PLAYLIST_URL_REGEX.exec(url)
   return match ? match[1] : null
 }
 
@@ -556,6 +641,40 @@ function base64ToAscii(base64String) {
   }
 
   return decoded
+}
+
+/**
+ * Make batch HTTP requests simpler
+ * @param {any[]} requests e.g. [{ url: '...', method: 'GET', headers: '...', body: '...', auth: true }]
+ * @returns {any} responses e.g. [{ body: '...', isOk: true }, ...]
+ */
+function batchRequest(requests) {
+  let batch = http.batch()
+
+  for (const request of requests) {
+    if (!request.url) {
+      throw new ScriptException('An HTTP request must have a URL')
+    }
+
+    if (!request.body) {
+      batch = batch.request(
+        request.method || 'GET',
+        request.url,
+        request.headers || {},
+        request.auth || false,
+      )
+    } else {
+      batch = batch.requestWithBody(
+        request.method || 'GET',
+        request.url,
+        request.body,
+        request.headers || {},
+        request.auth || false,
+      )
+    }
+  }
+
+  return batch.execute()
 }
 
 //#endregion
