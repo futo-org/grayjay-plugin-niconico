@@ -7,9 +7,13 @@ const URL_RECOMMENDED_FEED =
 // Docs: https://site.nicovideo.jp/search-api-docs/snapshot
 const URL_SEARCH =
   'https://api.search.nicovideo.jp/api/v2/snapshot/video/contents/search?targets=title,description,tags&fields=contentId,title,userId,viewCounter,lengthSeconds,thumbnailUrl,startTime&_sort=-viewCounter&_offset=0&_limit=20&_context=app-d39af5e3e5bb'
+const URL_COMMENTS = 'https://nv-comment.nicovideo.jp/v1/threads'
+const URL_FOLLOWING = 'https://nvapi.nicovideo.jp/v1/users/me/following/users?pageSize=100'
+const URL_PLAYLISTS = 'https://nvapi.nicovideo.jp/v1/users/me/mylists'
 
 const NICO_VIDEO_URL_REGEX = /.*nicovideo.jp\/watch\/(.*)/
 const NICO_CHANNEL_URL_REGEX = /.*nicovideo.jp\/user\/(.*)/
+const NICO_PLAYLIST_URL_REGEX = /.*nicovideo.jp\/my\/mylist\/(.*)/
 
 let config = {}
 
@@ -77,9 +81,7 @@ source.search = function (query) {
       })
 
       if (!res.isOk) {
-        throw new ScriptException(
-          'Failed request [' + URL_SEARCH + '] (' + res.code + ')',
-        )
+        throw new ScriptException('Failed request [' + URL_SEARCH + '] (' + res.code + ')')
       }
 
       const nicoVideos = JSON.parse(res.body).data
@@ -98,9 +100,14 @@ source.getContentDetails = function (videoUrl) {
   const getThumbInfoUrl = `https://ext.nicovideo.jp/api/getthumbinfo/${videoId}`
 
   // For video details in XML format
-  let batchRequest = http.batch().GET(getThumbInfoUrl, {})
-  batchRequest = batchRequest.GET(videoUrl, {})
-  const [videoXMLRes, videoHTMLRes] = batchRequest.execute()
+  const [videoXMLRes, videoHTMLRes] = batchRequest([
+    {
+      url: getThumbInfoUrl,
+    },
+    {
+      url: videoUrl,
+    },
+  ])
 
   if (!videoXMLRes.isOk || !videoHTMLRes.isOk) {
     const url = !videoXMLRes.isOk ? getThumbInfoUrl : videoUrl
@@ -112,12 +119,10 @@ source.getContentDetails = function (videoUrl) {
   const videoHTML = videoHTMLRes.body
 
   // The HLS endpoint needs to be fetched separately
-  const { actionTrackId, accessRightKey } =
-    getCSRFTokensFromVideoDetailHTML(videoHTML)
+  const { actionTrackId, accessRightKey } = getCSRFTokensFromVideoDetailHTML(videoHTML)
   // TODO Need to pass cookies to ExoPlayer for HLS stream to work, use dummy stream for now
   // const hlsEndpoint = fetchHLSEndpoint({ videoId, actionTrackId, accessRightKey });
-  const hlsEndpoint =
-    'http://sample.vodobox.net/skate_phantom_flex_4k/skate_phantom_flex_4k.m3u8'
+  const hlsEndpoint = 'http://sample.vodobox.net/skate_phantom_flex_4k/skate_phantom_flex_4k.m3u8'
 
   const platformVideo = nicoVideoDetailsToPlatformVideoDetails({
     videoXML,
@@ -131,25 +136,69 @@ source.isContentDetailsUrl = function (url) {
   return NICO_VIDEO_URL_REGEX.test(url)
 }
 
-// source.getComments = function (url) {
+source.getComments = function (videoUrl) {
+  const videoHTMLRes = http.GET(videoUrl, {})
 
-// };
+  if (!videoHTMLRes.isOk) {
+    throw new ScriptException('Failed request [' + videoUrl + '] (' + videoHTMLRes.code + ')')
+  }
 
-// source.getSubComments = function (comment) {
+  // Need data embedded in video HTML to make comments request
+  const encodedPageData = /data-api-data="(.*?)"/.exec(videoHTMLRes.body)?.[1] || ''
+  const pageData = JSON.parse(encodedPageData.replace(/&quot;/g, '"'))
 
-// };
+  const videoCommentsRes = http.POST(
+    URL_COMMENTS,
+    JSON.stringify({
+      params: pageData.comment.nvComment.params,
+      threadKey: pageData.comment.nvComment.threadKey,
+      additionals: {},
+    }),
+    {
+      'x-frontend-id': '6',
+    },
+  )
 
-// source.getSearchChannelContentsCapabilities = function () {
+  if (!videoCommentsRes.isOk) {
+    throw new ScriptException(
+      'Failed request [' + URL_COMMENTS + '] (' + videoCommentsRes.code + ')',
+    )
+  }
 
-// };
+  const nicoComments =
+    JSON.parse(videoCommentsRes.body).data.threads.find((x) => x.fork === 'main')?.comments || []
 
-// source.searchChannelContents = function (channelUrl, query, type, order, filters) {
+  const comments = nicoComments.map((comment) => {
+    return new Comment({
+      contextUrl: videoUrl,
+      author: new PlatformAuthorLink(
+        new PlatformID(PLATFORM, comment.id, config.id, PLATFORM_CLAIMTYPE),
+        '', // Does not exist on comments endpoint
+        `https://www.nicovideo.jp/user/${comment.userId}`,
+        '', // Does not exist on comments endpoint
+      ),
+      message: comment.body,
+      rating: new RatingLikes(comment.score),
+      date: dateToUnixSeconds(comment.postedAt),
+      replyCount: 0, // Does not exist
+    })
+  })
 
-// };
+  // Reverse comments for proper date order
+  return new CommentPager(comments.toReversed(), false)
+}
 
-// source.searchChannels = function (query) {
+// Does not exist
+// source.getSubComments = function (comment) {};
 
-// };
+// Does not exist
+// source.getSearchChannelContentsCapabilities = function () {}
+
+// Does not exist
+// source.searchChannelContents = function (channelUrl, query, type, order, filters) {}
+
+// Does not exist
+// source.searchChannels = function (query) {}
 
 source.isChannelUrl = function (url) {
   return NICO_CHANNEL_URL_REGEX.test(url)
@@ -159,12 +208,7 @@ source.getChannel = function (url) {
   const res = http.GET(url, {})
   const user = getUserDataFromHTML(res.body)
   return new PlatformChannel({
-    id: new PlatformID(
-      PLATFORM,
-      String(user.id),
-      config.id,
-      PLATFORM_CLAIMTYPE,
-    ),
+    id: new PlatformID(PLATFORM, String(user.id), config.id, PLATFORM_CLAIMTYPE),
     name: user.nickname,
     thumbnail: user.icons?.large,
     banner: user.coverImage?.smartphoneUrl,
@@ -190,9 +234,7 @@ source.getChannelContents = function (channelUrl) {
       })
 
       if (!res.isOk) {
-        throw new ScriptException(
-          'Failed request [' + searchUrl + '] (' + res.code + ')',
-        )
+        throw new ScriptException('Failed request [' + searchUrl + '] (' + res.code + ')')
       }
 
       const nicoVideos = JSON.parse(res.body).data.items.map((x) => x.essential)
@@ -208,9 +250,90 @@ source.getChannelContents = function (channelUrl) {
   return new ChannelVideoPager().nextPage()
 }
 
-// source.getChannelTemplateByClaimMap = () => {
+source.isPlaylistUrl = (url) => {
+  return NICO_PLAYLIST_URL_REGEX.test(url)
+}
 
-// };
+source.getPlaylist = (playlistUrl) => {
+  const playlistId = getPlaylistIdFromURL(playlistUrl)
+
+  if (!bridge.isLoggedIn()) {
+    bridge.log('Failed to retrieve playlist, not logged in.')
+    return null
+  }
+
+  const [playlistHttpRes, playlistJsonRes] = batchRequest([
+    {
+      url: playlistUrl,
+      headers: { 'X-Frontend-Id': '6' },
+      auth: true,
+    },
+    {
+      url: `https://nvapi.nicovideo.jp/v1/users/me/mylists/${playlistId}?pageSize=100&page=1`,
+      headers: { 'X-Frontend-Id': '6' },
+      auth: true,
+    },
+  ])
+
+  const nicoPlaylist = JSON.parse(playlistJsonRes.body).data.mylist
+  const platformVideos = nicoPlaylist.items.map(nicoVideoToPlatformVideo)
+
+  // Get user from embedded HTML
+  const encodedPageData = /data-common-header="(.*?)"/.exec(playlistHttpRes.body)?.[1] || ''
+  const pageData = JSON.parse(encodedPageData.replace(/&quot;/g, '"'))
+  const user = pageData.initConfig.user
+
+  return new PlatformPlaylistDetails({
+    url: playlistUrl,
+    id: new PlatformID(PLATFORM, playlistId, config.id),
+    author: new PlatformAuthorLink(
+      new PlatformID(PLATFORM, user.id, config.id, PLATFORM_CLAIMTYPE),
+      user.nickname,
+      `https://www.nicovideo.jp/user/${user.id}`,
+      user.iconUrl,
+    ),
+    name: nicoPlaylist.name,
+    thumbnail: null,
+    videoCount: platformVideos.length,
+    contents: new VideoPager(platformVideos, false),
+  })
+}
+
+source.getUserPlaylists = () => {
+  if (!bridge.isLoggedIn()) {
+    bridge.log('Failed to retrieve playlists, not logged in.')
+    return []
+  }
+
+  const res = http.GET(URL_PLAYLISTS, { 'X-Frontend-Id': '6' }, true)
+
+  const playlistUrls = JSON.parse(res.body).data.mylists.map(
+    (playlist) => `https://www.nicovideo.jp/my/mylist/${playlist.id}`,
+  )
+
+  return playlistUrls
+}
+
+source.getUserSubscriptions = () => {
+  if (!bridge.isLoggedIn()) {
+    bridge.log('Failed to retrieve subscriptions, not logged in.')
+    return []
+  }
+
+  const res = http.GET(
+    URL_FOLLOWING,
+    {
+      'X-Frontend-Id': '6',
+    },
+    true,
+  )
+
+  const followingUrls = JSON.parse(res.body).data.items.map((x) => {
+    return `https://www.nicovideo.jp/user/${x.id}`
+  })
+
+  return followingUrls
+}
 
 //#endregion
 
@@ -232,18 +355,13 @@ function nicoVideoDetailsToPlatformVideoDetails({ videoXML, hlsEndpoint }) {
   // TODO Cannot support delivery.domand.nicovideo.jp yet because Exoplayer must send a domand_bid cookie
   // with each request, this comes from Set-Cookie from the /access-rights endpoint
   if (hlsEndpoint.includes('delivery.domand.nicovideo.jp')) {
-    throw new UnavailableException(
-      'Niconico videos from "Domand" are not yet supported.',
-    )
+    throw new UnavailableException('Niconico videos from "Domand" are not yet supported.')
   }
 
   return new PlatformVideoDetails({
-    id:
-      videoId &&
-      new PlatformID(PLATFORM, videoId, config.id, PLATFORM_CLAIMTYPE),
+    id: videoId && new PlatformID(PLATFORM, videoId, config.id, PLATFORM_CLAIMTYPE),
     name: queryVideoXML('title'),
-    thumbnails:
-      thumbnailUrl && new Thumbnails([new Thumbnail(thumbnailUrl, 0)]),
+    thumbnails: thumbnailUrl && new Thumbnails([new Thumbnail(thumbnailUrl, 0)]),
     duration,
     viewCount: Number(queryVideoXML('view_counter')),
     url: videoUrl,
@@ -274,12 +392,9 @@ function nicoSearchVideoToPlatformVideo(v) {
   const authorId = String(v.userId)
 
   return new PlatformVideo({
-    id:
-      v.contentId &&
-      new PlatformID(PLATFORM, v.contentId, config.id, PLATFORM_CLAIMTYPE),
+    id: v.contentId && new PlatformID(PLATFORM, v.contentId, config.id, PLATFORM_CLAIMTYPE),
     name: v.title,
-    thumbnails:
-      v.thumbnailUrl && new Thumbnails([new Thumbnail(v.thumbnailUrl, 0)]),
+    thumbnails: v.thumbnailUrl && new Thumbnails([new Thumbnail(v.thumbnailUrl, 0)]),
     duration: v.lengthSeconds,
     viewCount: v.viewCounter,
     url: videoUrl,
@@ -302,8 +417,7 @@ function nicoVideoToPlatformVideo(v) {
   return new PlatformVideo({
     id: v.id && new PlatformID(PLATFORM, v.id, config.id, PLATFORM_CLAIMTYPE),
     name: v.title,
-    thumbnails:
-      thumbnailUrl && new Thumbnails([new Thumbnail(thumbnailUrl, 0)]),
+    thumbnails: thumbnailUrl && new Thumbnails([new Thumbnail(thumbnailUrl, 0)]),
     duration: v.duration,
     viewCount: v.count.view,
     url: videoUrl,
@@ -320,24 +434,22 @@ function nicoVideoToPlatformVideo(v) {
 }
 
 function getUserDataFromHTML(html) {
-  const urlEncodedData = /data-initial-data="(.*?)"/.exec(html)?.[1] || ''
-  const userPageData = JSON.parse(urlEncodedData.replace(/&quot;/g, '"'))
+  const encodedPageData = /data-initial-data="(.*?)"/.exec(html)?.[1] || ''
+  const userPageData = JSON.parse(encodedPageData.replace(/&quot;/g, '"'))
   const userObj = userPageData?.state?.userDetails?.userDetails?.user
   return userObj
 }
 
 function getCSRFTokensFromVideoDetailHTML(html) {
-  const urlEncodedData = /data-api-data="(.*?)"/.exec(html)?.[1] || ''
-  const pageData = JSON.parse(urlEncodedData.replace(/&quot;/g, '"'))
+  const encodedPageData = /data-api-data="(.*?)"/.exec(html)?.[1] || ''
+  const pageData = JSON.parse(encodedPageData.replace(/&quot;/g, '"'))
 
   // For getting actionTrackId and X-Access-Right-Key from the DOM, required for HLS requests
   const actionTrackId = pageData.client.watchTrackId
   const accessRightKey = pageData.media.domand.accessRightKey
 
   if (!actionTrackId || !accessRightKey) {
-    throw new ScriptException(
-      `Unable to play video, could not get CSRF tokens.`,
-    )
+    throw new ScriptException(`Unable to play video, could not get CSRF tokens.`)
   }
 
   return { actionTrackId, accessRightKey }
@@ -408,9 +520,9 @@ function getVideoIdFromUrl(url) {
 }
 
 /**
- * Gets the video id from an URL
+ * Gets the user id from an URL
  * @param {String?} url The URL
- * @returns {String?} The video id
+ * @returns {String?} The user id
  */
 function getUserIdFromURL(url) {
   if (!url) {
@@ -418,6 +530,20 @@ function getUserIdFromURL(url) {
   }
 
   const match = NICO_CHANNEL_URL_REGEX.exec(url)
+  return match ? match[1] : null
+}
+
+/**
+ * Gets the playlist id from an URL
+ * @param {String?} url The URL
+ * @returns {String?} The playlist id
+ */
+function getPlaylistIdFromURL(url) {
+  if (!url) {
+    return null
+  }
+
+  const match = NICO_PLAYLIST_URL_REGEX.exec(url)
   return match ? match[1] : null
 }
 
@@ -490,8 +616,7 @@ function parseJWT(jwt) {
  * @returns {String} ASCII string
  */
 function base64ToAscii(base64String) {
-  const base64Chars =
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/='
+  const base64Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/='
 
   let decoded = ''
   let buffer = 0
@@ -516,6 +641,40 @@ function base64ToAscii(base64String) {
   }
 
   return decoded
+}
+
+/**
+ * Make batch HTTP requests simpler
+ * @param {any[]} requests e.g. [{ url: '...', method: 'GET', headers: '...', body: '...', auth: true }]
+ * @returns {any} responses e.g. [{ body: '...', isOk: true }, ...]
+ */
+function batchRequest(requests) {
+  let batch = http.batch()
+
+  for (const request of requests) {
+    if (!request.url) {
+      throw new ScriptException('An HTTP request must have a URL')
+    }
+
+    if (!request.body) {
+      batch = batch.request(
+        request.method || 'GET',
+        request.url,
+        request.headers || {},
+        request.auth || false,
+      )
+    } else {
+      batch = batch.requestWithBody(
+        request.method || 'GET',
+        request.url,
+        request.body,
+        request.headers || {},
+        request.auth || false,
+      )
+    }
+  }
+
+  return batch.execute()
 }
 
 //#endregion

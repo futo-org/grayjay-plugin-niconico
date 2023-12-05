@@ -2,6 +2,7 @@ const IS_TESTING = false
 
 declare const bridge: {
   log(value: any)
+  isLoggedIn()
 }
 
 const Type = {
@@ -81,9 +82,7 @@ class CaptchaRequiredException extends Error {
   url: any
   body: any
   constructor(url, body) {
-    super(
-      JSON.stringify({ plugin_type: 'CaptchaRequiredException', url, body }),
-    )
+    super(JSON.stringify({ plugin_type: 'CaptchaRequiredException', url, body }))
     this.plugin_type = 'CaptchaRequiredException'
     this.url = url
     this.body = body
@@ -826,10 +825,10 @@ const source = {
   //OPTIONAL getSearchChannelContentsCapabilities(){ return { types: [], sorts: [] }; },
   //OPTIONAL searchChannelContents(channelUrl, query, type, order, filters){ return new Pager([], false, {}); }, //TODO
 
-  isChannelUrl(url) {
+  isChannelUrl(url: string) {
     return false
   },
-  getChannel(url) {
+  getChannel(url: string) {
     return null
   },
   getChannelCapabilities() {
@@ -839,24 +838,23 @@ const source = {
     return new ContentPager([], false, {})
   },
 
-  isContentDetailsUrl(url) {
+  isContentDetailsUrl(url: string) {
     return false
   },
-  getContentDetails(url) {}, //TODO
-
-  //OPTIONAL getComments(url){ return new Pager([], false, {}); }, //TODO
-  //OPTIONAL getSubComments(comment){ return new Pager([], false, {}); }, //TODO
-
-  //OPTIONAL getSubscriptionsUser(){ return []; },
-  //OPTIONAL getPlaylistsUser(){ return []; }
+  getContentDetails(url: string) {},
+  getComments(url: string) {},
+  getSubComments(comment) {},
+  isPlaylistUrl(url: string) {},
+  getPlaylist(url: string) {},
+  getUserPlaylists() {},
+  getUserSubscriptions() {},
 }
 
 function parseSettings(settings) {
   if (!settings) return {}
   const newSettings = {}
   for (const key in settings) {
-    if (typeof settings[key] == 'string')
-      newSettings[key] = JSON.parse(settings[key])
+    if (typeof settings[key] == 'string') newSettings[key] = JSON.parse(settings[key])
     else newSettings[key] = settings[key]
   }
   return newSettings
@@ -972,11 +970,7 @@ interface BridgeHttpResponse {
 }
 
 interface HttpCommon<ReturnType> {
-  GET(
-    url: string,
-    headers: { [key: string]: string },
-    useAuthClient?: boolean,
-  ): ReturnType
+  GET(url: string, headers: { [key: string]: string }, useAuthClient?: boolean): ReturnType
   POST(
     url: string,
     body: string,
