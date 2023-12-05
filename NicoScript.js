@@ -257,6 +257,7 @@ source.isPlaylistUrl = (url) => {
   return NICO_PLAYLIST_URL_REGEX.test(url)
 }
 
+// TODO Getting a "Failed to fetch" error on device but getPlaylist runs fine on device, bug in GrayJay??
 source.getPlaylist = (playlistUrl) => {
   const playlistId = getPlaylistIdFromURL(playlistUrl)
   const playlistApiUrl = `https://nvapi.nicovideo.jp/v1/users/me/mylists/${playlistId}?pageSize=100&page=1`
