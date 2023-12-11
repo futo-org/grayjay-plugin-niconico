@@ -120,16 +120,43 @@ source.getContentDetails = function (videoUrl) {
 
   // The HLS endpoint needs to be fetched separately
   const { actionTrackId, accessRightKey } = getCSRFTokensFromVideoDetailHTML(videoHTML)
-  // TODO Need to pass cookies to ExoPlayer for HLS stream to work, use dummy stream for now
-  // const hlsEndpoint = fetchHLSEndpoint({ videoId, actionTrackId, accessRightKey });
-  const hlsEndpoint = 'http://sample.vodobox.net/skate_phantom_flex_4k/skate_phantom_flex_4k.m3u8'
+
+  const hlsEndpoint = fetchHLSEndpoint({ videoId, actionTrackId, accessRightKey });
+  //const hlsEndpoint = 'http://sample.vodobox.net/skate_phantom_flex_4k/skate_phantom_flex_4k.m3u8'
 
   const platformVideo = nicoVideoDetailsToPlatformVideoDetails({
     videoXML,
     hlsEndpoint,
-  })
+  });
+  log(hlsEndpoint);
+  if(hlsEndpoint && hlsEndpoint.startsWith("https://delivery.domand.nicovideo.jp")) {
+      const clientId = http.getDefaultClient(false)?.clientId;
+      log("clientId: " + clientId);
+      if(clientId) {
+          for(let src of platformVideo.video.videoSources)
+              src.getRequestModifier = function() {
+                return new NicoNicoRequestModifier(clientId);
+              };
+      }
+  }
 
   return platformVideo
+}
+class NicoNicoRequestModifier extends RequestModifier {
+	constructor(clientId) {
+		super({ allowByteSkip: false });
+		this.clientId = clientId;
+    }
+	modifyRequest(url, headers) {
+        return {
+            url: url,
+			headers: headers,
+			options: {
+			    //applyAuthClient: this.clientId
+			    applyCookieClient: this.clientId
+			}
+		}
+    }
 }
 
 source.isContentDetailsUrl = function (url) {
@@ -373,11 +400,10 @@ function nicoVideoDetailsToPlatformVideoDetails({ videoXML, hlsEndpoint }) {
   // Closest thing to likes
   const mylistBookmarks = Number(queryVideoXML('mylist_counter'))
 
-  // TODO Cannot support delivery.domand.nicovideo.jp yet because Exoplayer must send a domand_bid cookie
-  // with each request, this comes from Set-Cookie from the /access-rights endpoint
+  /*
   if (hlsEndpoint.includes('delivery.domand.nicovideo.jp')) {
     throw new UnavailableException('Niconico videos from "Domand" are not yet supported.')
-  }
+  }*/
 
   return new PlatformVideoDetails({
     id: videoId && new PlatformID(PLATFORM, videoId, config.id, PLATFORM_CLAIMTYPE),
@@ -704,4 +730,4 @@ function batchRequest(requests) {
 
 //#endregion
 
-log('LOADED')
+console.log('LOADED')
