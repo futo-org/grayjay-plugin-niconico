@@ -128,10 +128,8 @@ source.getContentDetails = function (videoUrl) {
     videoXML,
     hlsEndpoint,
   });
-  log(hlsEndpoint);
   if(hlsEndpoint && hlsEndpoint.startsWith("https://delivery.domand.nicovideo.jp")) {
       const clientId = http.getDefaultClient(false)?.clientId;
-      log("clientId: " + clientId);
       if(clientId) {
           for(let src of platformVideo.video.videoSources)
               src.getRequestModifier = function() {
