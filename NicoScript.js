@@ -132,29 +132,16 @@ source.getContentDetails = function (videoUrl) {
       const clientId = http.getDefaultClient(false)?.clientId;
       if(clientId) {
           for(let src of platformVideo.video.videoSources)
-              src.getRequestModifier = function() {
-                return new NicoNicoRequestModifier(clientId);
-              };
+            src.requestModifier = {
+                options: {
+                    //applyAuthClient: this.clientId
+                    applyCookieClient: clientId
+                }
+            };
       }
   }
 
   return platformVideo
-}
-class NicoNicoRequestModifier extends RequestModifier {
-	constructor(clientId) {
-		super({ allowByteSkip: false });
-		this.clientId = clientId;
-    }
-	modifyRequest(url, headers) {
-        return {
-            url: url,
-			headers: headers,
-			options: {
-			    //applyAuthClient: this.clientId
-			    applyCookieClient: this.clientId
-			}
-		}
-    }
 }
 
 source.isContentDetailsUrl = function (url) {
