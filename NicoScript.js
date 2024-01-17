@@ -93,6 +93,8 @@ source.search = function (query) {
 }
 
 source.getContentDetails = function (videoUrl) {
+  log(`calling getContentDetails for videoUrl: ${videoUrl}`)
+
   const videoId = getVideoIdFromUrl(videoUrl)
   // Docs: https://w.atwiki.jp/nicoapi/pages/16.html
   const getThumbInfoUrl = `https://ext.nicovideo.jp/api/getthumbinfo/${videoId}`
@@ -118,28 +120,32 @@ source.getContentDetails = function (videoUrl) {
   const videoXML = videoXMLRes.body
   const videoHTML = videoHTMLRes.body
 
+  // Video no longer available
+  if (videoHTML.includes('お探しの動画は視聴できません')) {
+    throw new ScriptException("The video you are looking for cannot be viewed.")
+  }
+
+  // Video not available in this region
+  if (videoHTML.includes('この動画は投稿( アップロード )された地域と同じ地域からのみ視聴できます。')) {
+    throw new ScriptException("This video can only be viewed from the same region where it was posted (uploaded).")
+  }
+
+  log('calling getCSRFTokensFromVideoDetailHTML')
+
   // The HLS endpoint needs to be fetched separately
   const { actionTrackId, accessRightKey } = getCSRFTokensFromVideoDetailHTML(videoHTML)
 
   const hlsEndpoint = fetchHLSEndpoint({ videoId, actionTrackId, accessRightKey });
   //const hlsEndpoint = 'http://sample.vodobox.net/skate_phantom_flex_4k/skate_phantom_flex_4k.m3u8'
 
+  log(`got hlsEndpoint: ${hlsEndpoint}`)
+
   const platformVideo = nicoVideoDetailsToPlatformVideoDetails({
     videoXML,
     hlsEndpoint,
   });
-  if(hlsEndpoint && hlsEndpoint.startsWith("https://delivery.domand.nicovideo.jp")) {
-      const clientId = http.getDefaultClient(false)?.clientId;
-      if(clientId) {
-          for(let src of platformVideo.video.videoSources)
-            src.requestModifier = {
-                options: {
-                    //applyAuthClient: this.clientId
-                    applyCookieClient: clientId
-                }
-            };
-      }
-  }
+
+  log('got platformVideo')
 
   return platformVideo
 }
@@ -385,10 +391,27 @@ function nicoVideoDetailsToPlatformVideoDetails({ videoXML, hlsEndpoint }) {
   // Closest thing to likes
   const mylistBookmarks = Number(queryVideoXML('mylist_counter'))
 
-  /*
-  if (hlsEndpoint.includes('delivery.domand.nicovideo.jp')) {
-    throw new UnavailableException('Niconico videos from "Domand" are not yet supported.')
-  }*/
+  log('creating HLS source')
+
+  // Create HLS endpoint
+  const hlsSource = new HLSSource({
+    name: 'Original',
+    url: hlsEndpoint,
+    duration,
+  })
+
+  log('adding requestModifier')
+
+  // Domand videos require a domand_bid cookie for the request to work
+  const httpClientId = http.getDefaultClient(false).clientId
+  if (hlsEndpoint.includes('delivery.domand.nicovideo.jp') && httpClientId) {
+    // @ts-expect-error Types do not yet exist for this
+    hlsSource.requestModifier = { options: { applyCookieClient: httpClientId } }
+  } else {
+    throw new ScriptException(`Unhandled hlsEndpoint: ${hlsEndpoint}`)
+  }
+
+  log('creating PlatformVideoDetails')
 
   return new PlatformVideoDetails({
     id: videoId && new PlatformID(PLATFORM, videoId, config.id, PLATFORM_CLAIMTYPE),
@@ -409,13 +432,7 @@ function nicoVideoDetailsToPlatformVideoDetails({ videoXML, hlsEndpoint }) {
     description: unescapeHtmlEntities(queryVideoXML('description')),
     rating: new RatingLikes(mylistBookmarks),
     subtitles: [],
-    video: new VideoSourceDescriptor([
-      new HLSSource({
-        name: 'Original',
-        url: hlsEndpoint,
-        duration,
-      }),
-    ]),
+    video: new VideoSourceDescriptor([hlsSource]),
   })
 }
 
