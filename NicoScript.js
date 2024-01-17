@@ -316,9 +316,9 @@ source.getPlaylist = (playlistUrl) => {
 
   return new PlatformPlaylistDetails({
     url: playlistUrl,
-    id: new PlatformID(PLATFORM, playlistId, config.id),
+    id: new PlatformID(PLATFORM, playlistId, config.id, PLATFORM_CLAIMTYPE),
     author: new PlatformAuthorLink(
-      new PlatformID(PLATFORM, user.id, config.id, PLATFORM_CLAIMTYPE),
+      new PlatformID(PLATFORM, String(user.id), config.id, PLATFORM_CLAIMTYPE),
       user.nickname,
       `https://www.nicovideo.jp/user/${user.id}`,
       user.iconUrl,
