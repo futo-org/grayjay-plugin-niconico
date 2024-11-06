@@ -998,6 +998,7 @@ interface HttpBatchBuilder extends HttpCommon<HttpBatchBuilder> {
 
 interface Http extends HttpCommon<BridgeHttpResponse> {
   batch(): HttpBatchBuilder
+  getDefaultClient(useAuthClient: boolean): { clientId: string }
 }
 
 declare const http: Http
