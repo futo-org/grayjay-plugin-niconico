@@ -28,7 +28,8 @@ export type NiconicoCommentContext = {
     readonly aweme_id: string
 }
 export type ChannelTypeCapabilities = typeof Type.Feed.Videos
-export type SearchTypes = typeof Type.Feed.Videos | typeof Type.Feed.Live | typeof Type.Feed.Mixed
+export type SearchTypes = typeof Type.Feed.Videos | typeof Type.Feed.Live
+export type FilterGroupIDs = "DURATION" | "DATE" | "ADDITIONAL_CONTENT"
 //#endregion
 
 //#region JSON types
@@ -56,20 +57,29 @@ export type Content = {
         readonly iconUrl: string
     }
 }
-export type SearchContent = {
-    readonly title: string
-    readonly contentId: string
-    readonly userId: unknown
-    readonly lengthSeconds: number
-    readonly viewCounter: number
-    readonly thumbnailUrl: string
-    readonly startTime: string
-}
 export type SearchSuggestionsResponse = {
     readonly candidates: string[]
 }
-export type SearchVideosResponse = {
-    readonly data: SearchContent[]
+export type SearchLiveVideosResponse = {
+    readonly searchResult: {
+        readonly programs: {
+            readonly onair: OnAirData[]
+        }
+    }
+}
+export type OnAirData = {
+    readonly id: string
+    readonly programProvider: {
+        readonly id: string
+        readonly name: string
+        readonly icon: string
+    }
+    readonly title: string
+    readonly listingThumbnail: string
+    readonly statistics: {
+        readonly watchCount: number
+    }
+    readonly beginAt: number
 }
 export type PageDataResponse = {
     readonly comment: {

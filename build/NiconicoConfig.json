@@ -5,7 +5,7 @@
     "authorUrl": "https://futo.org",
     "platformUrl": "https://www.nicovideo.jp",
     "sourceUrl": "https://plugins.grayjay.app/Niconico/NiconicoConfig.json",
-    "repositoryUrl": "https://futo.org",
+    "repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/niconico",
     "scriptUrl": "./NiconicoScript.js",
     "version": 1,
     "iconUrl": "./NiconicoIcon.png",
@@ -13,15 +13,20 @@
     "scriptSignature": "",
     "scriptPublicKey": "",
     "packages": [
-        "Http"
+        "Http",
+        "DOMParser"
     ],
     "allowEval": false,
     "allowUrls": [
-        "nvapi.nicovideo.jp"
+        "nvapi.nicovideo.jp",
+        "sug.search.nicovideo.jp",
+        "api.search.nicovideo.jp",
+        "live.nicovideo.jp",
+        "www.nicovideo.jp"
     ],
     "authentication": {
-        "userAgent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.5481.153 Mobile Safari/537.36",
-        "loginUrl": "https://account.nicovideo.jp/login?site=niconico&next_url=%2F&sec=header_pc&cmnhd_ref=device%3Dpc%26site%3Dniconico%26pos%3Dheader_login%26page%3Dtop",
+        "userAgent": "Mozilla/5.0 (Android 14; Mobile; rv:132.0) Gecko/132.0 Firefox/132.0",
+        "loginUrl": "https://account.nicovideo.jp/login",
         "cookiesToFind": [
             "user_session"
         ]

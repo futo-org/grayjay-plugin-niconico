@@ -1,13 +1,24 @@
 const PLATFORM = "Niconico";
-// Docs: https://site.nicovideo.jp/search-api-docs/snapshot
-const URL_SEARCH = "https://api.search.nicovideo.jp/api/v2/snapshot/video/contents/search?targets=title,description,tags&fields=contentId,title,userId,viewCounter,lengthSeconds,thumbnailUrl,startTime&_sort=-viewCounter&_offset=0&_limit=20&_context=app-d39af5e3e5bb";
 const URL_RECOMMENDED_FEED = "https://nvapi.nicovideo.jp/v1/recommend?recipeId=video_recommendation_recommend&sensitiveContents=mask&site=nicovideo&_frontendId=6&_frontendVersion=0";
 const URL_COMMENTS = "https://nv-comment.nicovideo.jp/v1/threads";
 const URL_FOLLOWING = "https://nvapi.nicovideo.jp/v1/users/me/following/users?pageSize=100";
 const URL_PLAYLISTS = "https://nvapi.nicovideo.jp/v1/users/me/mylists";
+const USER_URL_PREFIX = "https://www.nicovideo.jp/user/";
+const VIDEO_URL_PREFIX = "https://www.nicovideo.jp/watch/";
+const LIVE_URL_PREFIX = "https://live.nicovideo.jp/watch/";
 const NICO_VIDEO_URL_REGEX = /.*nicovideo.jp\/watch\/(.*)/;
 const NICO_CHANNEL_URL_REGEX = /.*nicovideo.jp\/user\/(.*)/;
 const NICO_PLAYLIST_URL_REGEX = /.*nicovideo.jp\/my\/mylist\/(.*)/;
+const JST_OFFSET = "+09:00";
+const HARDCODED_THUMBNAIL_QUALITY = 1080;
+const MISSING_AUTHOR = "Missing Creator";
+const DEFAULT_AUTHOR = 1;
+const DEFAULT_AUTHOR_THUMB = "https://secure-dcdn.cdn.nimg.jp/nicoaccount/usericon/0/1.jpg?1671282761";
+// set missing constants
+Type.Order.Chronological = "Latest releases";
+Type.Order.Views = "Most played";
+Type.Order.Favorites = "Most favorited";
+const local_dom_parser = domParser;
 const local_http = http;
 //#endregion
 //#region source methods
@@ -38,7 +49,7 @@ function init_source(local_source) {
 }
 //#endregion
 //#region enable
-function enable(conf, settings, savedState) {
+function enable(conf, settings, saved_state) {
     if (IS_TESTING) {
         log("IS_TESTING true");
         log("logging configuration");
@@ -46,7 +57,7 @@ function enable(conf, settings, savedState) {
         log("logging settings");
         log(settings);
         log("logging savedState");
-        log(savedState);
+        log(saved_state);
     }
 }
 //#endregion
@@ -55,25 +66,13 @@ function disable() {
 }
 //#region home
 function getHome() {
-    return new RecommendedVideoPager();
-}
-class RecommendedVideoPager extends VideoPager {
-    constructor() {
-        const res = local_http.GET(URL_RECOMMENDED_FEED, {}, bridge.isLoggedIn());
-        if (res.code !== 200) {
-            throw new ScriptException(`Failed request [${URL_RECOMMENDED_FEED}] (${res.code})`);
-        }
-        const response = JSON.parse(res.body);
-        const nicoVideos = response.data.items.map((x) => x.content);
-        const platformVideos = nicoVideos.map(nicoVideoToPlatformVideo);
-        super(platformVideos, false);
+    const response = local_http.GET(URL_RECOMMENDED_FEED, {}, bridge.isLoggedIn());
+    if (response.code !== 200) {
+        throw new ScriptException(`Failed request [${URL_RECOMMENDED_FEED}] (${response.code})`);
     }
-    nextPage() {
-        return this;
-    }
-    hasMorePagers() {
-        return this.hasMore;
-    }
+    const feed_response = JSON.parse(response.body);
+    const platform_videos = feed_response.data.items.map((x) => nico_video_to_PlatformVideo(x.content));
+    return new VideoPager(platform_videos, false);
 }
 //#endregion
 //#region search
@@ -84,33 +83,250 @@ function searchSuggestions(query) {
         throw new ScriptException(`Failed request [${url}] (${res.code})`);
     }
     const response = JSON.parse(res.body);
-    const suggestions = response.candidates;
-    return suggestions;
+    return response.candidates;
 }
 function getSearchCapabilities() {
-    return { types: [Type.Feed.Mixed], sorts: [], filters: [] };
+    return new ResultCapabilities([Type.Feed.Videos, Type.Feed.Live], [Type.Order.Chronological, Type.Order.Favorites, Type.Order.Views], 
+    // these fiilters only apply to videos not live streams
+    [new FilterGroup("Date", [
+            new FilterCapability("Last Hour", Type.Date.LastHour, "Last Hour"),
+            new FilterCapability("Today", Type.Date.Today, "Today"),
+            new FilterCapability("Last Week", Type.Date.LastWeek, "Last Week"),
+            new FilterCapability("Last Month", Type.Date.LastMonth, "Last Month"),
+        ], false, "DATE"),
+        new FilterGroup("Duration", [
+            new FilterCapability("Short", Type.Duration.Short, "Short"),
+            new FilterCapability("Long", Type.Duration.Long, "Long")
+        ], false, "DURATION"),
+        new FilterGroup("Additional Content", [
+            new FilterCapability("Live", "LIVE", "Live"),
+            new FilterCapability("Videos", "VIDEOS", "Videos")
+        ], false, "ADDITIONAL_CONTENT")]);
 }
-function search(query) {
-    return new SearchVideoPager(query);
+function search(query, type, order, filters) {
+    if (filters === null) {
+        throw new ScriptException("unreachable");
+    }
+    if (order === "CHRONOLOGICAL") {
+        order = Type.Order.Chronological;
+    }
+    if (type === null) {
+        type = (() => {
+            switch (filters["ADDITIONAL_CONTENT"]?.[0]) {
+                case "VIDEOS":
+                    return Type.Feed.Videos;
+                case "LIVE":
+                    return Type.Feed.Live;
+                case undefined:
+                    log("Niconico log: search type is null defaulting to Videos");
+                    return Type.Feed.Videos;
+                default:
+                    throw new ScriptException("unreachable");
+            }
+        })();
+    }
+    switch (type) {
+        case Type.Feed.Live:
+            return new SearchLivePager(query, order);
+        case Type.Feed.Videos:
+            return new SearchVideoPager(query, order, filters);
+        default:
+            throw assert_exhaustive(type, "unreachable");
+    }
 }
 class SearchVideoPager extends VideoPager {
-    constructor(query) {
-        const res = local_http.POST(URL_SEARCH, `q=${encodeURIComponent(query)}`, {
-            "Content-Type": "application/x-www-form-urlencoded",
-        }, false);
-        if (!res.isOk) {
-            throw new ScriptException(`Failed request [${URL_SEARCH}] (${res.code})`);
+    url;
+    next_page;
+    constructor(query, order, filters) {
+        const url = new URL(`https://www.nicovideo.jp/search/${query}`);
+        switch (order) {
+            case null:
+                // "Most popular"
+                url.searchParams.set("sort", "h");
+                break;
+            case Type.Order.Chronological:
+                url.searchParams.set("sort", "f");
+                break;
+            case Type.Order.Views:
+                url.searchParams.set("sort", "v");
+                break;
+            case Type.Order.Favorites:
+                url.searchParams.set("sort", "likeCount");
+                break;
+            default:
+                log(`Niconico log: unexpected ordering ${order}`);
+                url.searchParams.set("sort", "h");
+                break;
         }
-        const nicoVideos = JSON.parse(res.body);
-        const platformVideos = nicoVideos.data.map(nicoSearchVideoToPlatformVideo);
-        super(platformVideos, false);
+        // order descending
+        url.searchParams.set("order", "d");
+        switch (filters["DURATION"]?.[0]) {
+            case Type.Duration.Short:
+                url.searchParams.set("l_range", "1");
+                break;
+            case Type.Duration.Long:
+                url.searchParams.set("l_range", "2");
+                break;
+            case undefined:
+                break;
+            default:
+                throw new ScriptException(`unknown date filter ${filters.DURATION[0]}`);
+        }
+        switch (filters["DATE"]?.[0]) {
+            case Type.Date.LastHour:
+                url.searchParams.set("f_range", "4");
+                break;
+            case Type.Date.Today:
+                url.searchParams.set("f_range", "1");
+                break;
+            case Type.Date.LastWeek:
+                url.searchParams.set("f_range", "2");
+                break;
+            case Type.Date.LastMonth:
+                url.searchParams.set("f_range", "3");
+                break;
+            case undefined:
+                break;
+            default:
+                throw new ScriptException(`unknown duration filter ${filters.DATE[0]}`);
+        }
+        url.searchParams.set("page", "1");
+        const res = local_http.GET(url.toString(), {}, false);
+        if (!res.isOk) {
+            throw new ScriptException(`Failed request [${url.toString()}] (${res.code})`);
+        }
+        const root_element = local_dom_parser.parseFromString(res.body).querySelector('[data-video-list]');
+        if (root_element === undefined) {
+            super([], false);
+        }
+        else {
+            const platform_videos = root_element?.querySelectorAll('[data-video-item]').map(format_video_search_results);
+            super(platform_videos, true);
+        }
+        this.url = url;
+        this.next_page = 2;
     }
     nextPage() {
+        this.url.searchParams.set("page", this.next_page.toString());
+        const res = local_http.GET(this.url.toString(), {}, false);
+        if (!res.isOk) {
+            throw new ScriptException(`Failed request [${this.url.toString()}] (${res.code})`);
+        }
+        const root_element = local_dom_parser.parseFromString(res.body).querySelector('[data-video-list]');
+        if (root_element === undefined) {
+            this.hasMore = false;
+            this.results = [];
+            this.next_page = this.next_page + 1;
+            return this;
+        }
+        const platform_videos = root_element?.querySelectorAll('[data-video-item]').map(format_video_search_results);
+        this.hasMore = true;
+        this.results = platform_videos;
+        this.next_page = this.next_page + 1;
         return this;
     }
     hasMorePagers() {
         return this.hasMore;
     }
+}
+function format_video_search_results(root_element) {
+    const extracted_data = {
+        duration: root_element.getElementsByClassName("videoLength")?.[0]?.text,
+        thumbnail: root_element.getElementsByClassName("thumb")?.[0]?.getAttribute("src"),
+        id: root_element.getAttribute("data-video-id"),
+        title: root_element.getElementsByClassName("itemTitle")?.[0]?.firstChild?.text,
+        upload_date: root_element.getElementsByClassName("video_uploaded")?.[0]?.firstChild?.text,
+        view_count: root_element.getElementsByClassName("count view")?.[0]?.firstChild?.text
+    };
+    if (extracted_data.id === undefined || extracted_data.title === undefined || extracted_data.thumbnail === undefined || extracted_data.upload_date === undefined || extracted_data.duration === undefined || extracted_data.view_count === undefined) {
+        throw new ScriptException("missing data");
+    }
+    const video_url = `${VIDEO_URL_PREFIX}${extracted_data.id}`;
+    const author_id = DEFAULT_AUTHOR;
+    return new PlatformVideo({
+        id: new PlatformID(PLATFORM, extracted_data.id, plugin.config.id),
+        name: extracted_data.title,
+        thumbnails: new Thumbnails([new Thumbnail(extracted_data.thumbnail, 0)]),
+        duration: hhmmssToDuration(extracted_data.duration),
+        viewCount: parseInt(extracted_data.view_count.split(",").join("")),
+        url: video_url,
+        isLive: false,
+        // little hack to get the correct times
+        datetime: date_to_unix_seconds(extracted_data.upload_date + JST_OFFSET),
+        shareUrl: video_url,
+        author: new PlatformAuthorLink(new PlatformID(PLATFORM, author_id.toString(), plugin.config.id), MISSING_AUTHOR, `${USER_URL_PREFIX}${author_id}`, DEFAULT_AUTHOR_THUMB),
+    });
+}
+class SearchLivePager extends VideoPager {
+    url;
+    next_page;
+    constructor(query, order) {
+        const url = new URL("https://live.nicovideo.jp/search");
+        url.searchParams.set("keyword", query);
+        switch (order) {
+            case null:
+                break;
+            case Type.Order.Chronological:
+                break;
+            case Type.Order.Views:
+                url.searchParams.set("sortOrder", "viewCountDesc");
+                break;
+            default:
+                log(`Niconico log: unexpected ordering ${order}`);
+                break;
+        }
+        url.searchParams.set("page", "1");
+        const res = local_http.GET(url.toString(), {}, false);
+        if (!res.isOk) {
+            throw new ScriptException(`Failed request [${url.toString()}] (${res.code})`);
+        }
+        // using the DOM parser because the data is stored in an element attribute with annoying &quot;
+        const data = local_dom_parser.parseFromString(res.body).getElementById("embedded-data")?.getAttribute("data-props");
+        if (data === undefined) {
+            throw new ScriptException("missing data");
+        }
+        const obj = JSON.parse(data);
+        const platform_videos = obj.searchResult.programs.onair.map(format_live_search_results);
+        super(platform_videos, obj.searchResult.programs.onair.length !== 0);
+        this.url = url;
+        this.next_page = 2;
+    }
+    nextPage() {
+        this.url.searchParams.set("page", this.next_page.toString());
+        const res = local_http.GET(this.url.toString(), {}, false);
+        if (!res.isOk) {
+            throw new ScriptException(`Failed request [${this.url.toString()}] (${res.code})`);
+        }
+        // using the DOM parser because the data is stored in an element attribute with annoying &quot;
+        const data = local_dom_parser.parseFromString(res.body).getElementById("embedded-data")?.getAttribute("data-props");
+        if (data === undefined) {
+            throw new ScriptException("missing data");
+        }
+        const obj = JSON.parse(data);
+        const platform_videos = obj.searchResult.programs.onair.map(format_live_search_results);
+        this.hasMore = obj.searchResult.programs.onair.length !== 0;
+        this.results = platform_videos;
+        this.next_page = this.next_page + 1;
+        return this;
+    }
+    hasMorePagers() {
+        return this.hasMore;
+    }
+}
+function format_live_search_results(live_broadcast) {
+    const video_url = `${LIVE_URL_PREFIX}${live_broadcast.id}`;
+    const author_id = live_broadcast.programProvider.id;
+    return new PlatformVideo({
+        id: new PlatformID(PLATFORM, live_broadcast.id, plugin.config.id),
+        name: live_broadcast.title,
+        thumbnails: new Thumbnails([new Thumbnail(live_broadcast.listingThumbnail, HARDCODED_THUMBNAIL_QUALITY)]),
+        viewCount: live_broadcast.statistics.watchCount,
+        url: video_url,
+        isLive: true,
+        datetime: live_broadcast.beginAt / 1000,
+        shareUrl: video_url,
+        author: new PlatformAuthorLink(new PlatformID(PLATFORM, author_id, plugin.config.id), live_broadcast.programProvider.name, `${USER_URL_PREFIX}${author_id}`, live_broadcast.programProvider.icon),
+    });
 }
 //#endregion
 //#region content
@@ -256,7 +472,7 @@ class ChannelContentsPager extends VideoPager {
         }
         const channel_videos_response = JSON.parse(res.body);
         const nicoVideos = channel_videos_response.data.items.map((x) => x.essential);
-        const platformVideos = nicoVideos.map(nicoVideoToPlatformVideo);
+        const platformVideos = nicoVideos.map(nico_video_to_PlatformVideo);
         super(platformVideos, false);
     }
     nextPage() {
@@ -294,7 +510,7 @@ function getPlaylist(playlist_url) {
     }
     const playlist_response = JSON.parse(playlistApiRes.body);
     const nicoPlaylist = playlist_response.data.mylist;
-    const platformVideos = nicoPlaylist.items.map((x) => x.video).map(nicoVideoToPlatformVideo);
+    const platformVideos = nicoPlaylist.items.map((x) => x.video).map(nico_video_to_PlatformVideo);
     // Get user from embedded HTML
     const regex_thing = /data-common-header="(.*?)"/.exec(playlistHttpRes.body);
     if (regex_thing === null) {
@@ -392,7 +608,7 @@ function nicoVideoDetailsToPlatformVideoDetails(videoXML, hlsEndpoint) {
         viewCount: 0, //Number(queryVideoXML("view_counter")),
         url: videoUrl,
         isLive: false,
-        datetime: dateToUnixSeconds(queryVideoXML("first_retrieve")),
+        datetime: date_to_unix_seconds(queryVideoXML("first_retrieve")),
         shareUrl: videoUrl,
         author: new PlatformAuthorLink(new PlatformID(PLATFORM, authorId, plugin.config.id), queryVideoXML("user_nickname"), `https://www.nicovideo.jp/user/${authorId}`, queryVideoXML("user_icon_url")),
         description: unescapeHtmlEntities(queryVideoXML("description")),
@@ -401,36 +617,41 @@ function nicoVideoDetailsToPlatformVideoDetails(videoXML, hlsEndpoint) {
         video: new VideoSourceDescriptor([hlsSource]),
     });
 }
-function nicoSearchVideoToPlatformVideo(v) {
-    const videoUrl = `https://www.nicovideo.jp/watch/${v.contentId}`;
-    const authorId = String(v.userId);
-    return new PlatformVideo({
-        id: new PlatformID(PLATFORM, v.contentId, plugin.config.id),
-        name: v.title,
-        thumbnails: new Thumbnails([new Thumbnail(v.thumbnailUrl, 0)]),
-        duration: v.lengthSeconds,
-        viewCount: v.viewCounter,
-        url: videoUrl,
-        isLive: false,
-        datetime: dateToUnixSeconds(v.startTime),
-        shareUrl: videoUrl,
-        author: new PlatformAuthorLink(new PlatformID(PLATFORM, authorId, plugin.config.id), "ニコニコ", `https://www.nicovideo.jp/user/${authorId}`, "https://play-lh.googleusercontent.com/_C1KxgGIw43g2Y2G8salrswvYqkkBum5896cCrFOWkgdAxZI10efI-oQxfWRfLOBysE"),
-    });
-}
-function nicoVideoToPlatformVideo(v) {
-    const videoUrl = `https://www.nicovideo.jp/watch/${v.id}`;
-    const thumbnailUrl = v.thumbnail.listingUrl;
+// function nico_search_video_to_PlatformVideo(v: SearchContent) {
+//     const video_url = `https://www.nicovideo.jp/watch/${v.contentId}`
+//     const author_id = String(v.userId)
+//     return new PlatformVideo({
+//         id: new PlatformID(PLATFORM, v.contentId, plugin.config.id),
+//         name: v.title,
+//         thumbnails: new Thumbnails([new Thumbnail(v.thumbnailUrl, 0)]),
+//         duration: v.lengthSeconds,
+//         viewCount: v.viewCounter,
+//         url: video_url,
+//         isLive: false,
+//         datetime: date_to_unix_seconds(v.startTime),
+//         shareUrl: video_url,
+//         author: new PlatformAuthorLink(
+//             new PlatformID(PLATFORM, author_id, plugin.config.id),
+//             "ニコニコ",
+//             `https://www.nicovideo.jp/user/${author_id}`,
+//             "https://play-lh.googleusercontent.com/_C1KxgGIw43g2Y2G8salrswvYqkkBum5896cCrFOWkgdAxZI10efI-oQxfWRfLOBysE",
+//         ),
+//     })
+// }
+function nico_video_to_PlatformVideo(v) {
+    const video_url = `${VIDEO_URL_PREFIX}${v.id}`;
+    const thumbnail_url = v.thumbnail.listingUrl;
     return new PlatformVideo({
         id: new PlatformID(PLATFORM, v.id, plugin.config.id),
         name: v.title,
-        thumbnails: new Thumbnails([new Thumbnail(thumbnailUrl, 0)]),
+        thumbnails: new Thumbnails([new Thumbnail(thumbnail_url, HARDCODED_THUMBNAIL_QUALITY)]),
         duration: v.duration,
         viewCount: v.count.view,
-        url: videoUrl,
+        url: video_url,
         isLive: false,
-        datetime: dateToUnixSeconds(v.registeredAt),
-        shareUrl: videoUrl,
-        author: new PlatformAuthorLink(new PlatformID(PLATFORM, v.owner.id, plugin.config.id), v.owner.name, `https://www.nicovideo.jp/user/${v.owner.id}`, v.owner.iconUrl),
+        datetime: date_to_unix_seconds(v.registeredAt),
+        shareUrl: video_url,
+        author: new PlatformAuthorLink(new PlatformID(PLATFORM, v.owner.id, plugin.config.id), v.owner.name, `${USER_URL_PREFIX}${v.owner.id}`, v.owner.iconUrl),
     });
 }
 function getUserDataFromHTML(html) {
@@ -498,7 +719,7 @@ function fetchHLSEndpoint(videoId, actionTrackId, accessRightKey) {
  * @param date Date to convert
  * @returns Unix time stamp
  */
-function dateToUnixSeconds(date) {
+function date_to_unix_seconds(date) {
     if (!date) {
         throw new ScriptException("invalid date string");
     }
@@ -645,9 +866,16 @@ function base64ToAscii(base64String) {
 function milliseconds_to_WebVTT_timestamp(milliseconds) {
     return new Date(milliseconds).toISOString().substring(11, 23);
 }
+function assert_exhaustive(value, exception_message) {
+    log(["TikTok log:", value]);
+    if (exception_message !== undefined) {
+        return new ScriptException(exception_message);
+    }
+    return;
+}
 //#endregion
 console.log(milliseconds_to_WebVTT_timestamp);
 // export statements are removed during build step
 // used for unit testing in NiconicoScript.test.ts
 // export { milliseconds_to_WebVTT_timestamp };
-//# sourceMappingURL=http://localhost:8080/build/NiconicoScript.js.map
+//# sourceMappingURL=NiconicoScript.js.map
