@@ -24,7 +24,8 @@ import type {
     ChannelSeriesResponse,
     NiconicoChannelSeries,
     SeriesResponse,
-    WatchLaterResponse
+    WatchLaterResponse,
+    SearchVideosResponse
 } from "./types"
 
 const PLATFORM = "Niconico" as const
@@ -38,12 +39,11 @@ const LIVE_URL_PREFIX = "https://live.nicovideo.jp/watch/" as const
 const LOGGED_IN_USER_LISTS_PREFIX = "https://www.nicovideo.jp/my/mylist/" as const
 const SEARCH_PLAYLISTS_URL = "https://nvapi.nicovideo.jp/v1/search/list" as const
 
-const NICO_VIDEO_URL_REGEX = /^https:\/\/(live|www)\.nicovideo\.jp\/watch\/(lv[0-9]{9}|sm[0-9]{8})$/
+const NICO_VIDEO_URL_REGEX = /^https:\/\/(live|www)\.nicovideo\.jp\/watch\/(lv[0-9]{9}|sm[0-9]*?)$/
 const NICO_CHANNEL_URL_REGEX = /^https:\/\/www\.nicovideo\.jp\/user\/([0-9]*?)$/
 const LOGGED_IN_USER_LISTS_REGEX = /^https:\/\/www\.nicovideo\.jp\/my\/(watchlater|mylist\/([0-9]{8}))$/
 const PLAYLIST_URL_REGEX = /^https:\/\/www\.nicovideo\.jp\/user\/([0-9]*?)\/(series|mylist)\/([0-9]*?)$/
 
-const JST_OFFSET = "+09:00"
 // determines what subtitles are available and likely other things
 const ACCEPT_LANGUAGE = "en-US,en;q=0.7,es;q=0.3"
 
@@ -124,7 +124,12 @@ function getHome() {
     }
     const feed_response: FeedResponse = JSON.parse(response.body)
 
-    const platform_videos = feed_response.data.items.map((x) => nico_video_to_PlatformVideo(x.content))
+    const platform_videos = feed_response.data.items.flatMap((x) => {
+        if (x.contentType === "video") {
+            return nico_video_to_PlatformVideo(x.content)
+        }
+        return []
+    })
 
     return new VideoPager(platform_videos, false)
 }
@@ -151,28 +156,7 @@ function getSearchCapabilities() {
     return new ResultCapabilities<FilterGroupIDs, SearchTypes>(
         [Type.Feed.Videos, Type.Feed.Live],
         [Type.Order.Chronological, Type.Order.Favorites, Type.Order.Views],
-        // these fiilters only apply to videos not live streams
         [new FilterGroup(
-            "Date",
-            [
-                new FilterCapability("Last Hour", Type.Date.LastHour, "Last Hour"),
-                new FilterCapability("Today", Type.Date.Today, "Today"),
-                new FilterCapability("Last Week", Type.Date.LastWeek, "Last Week"),
-                new FilterCapability("Last Month", Type.Date.LastMonth, "Last Month"),
-            ],
-            false,
-            "DATE"
-        ),
-        new FilterGroup(
-            "Duration",
-            [
-                new FilterCapability("Short", Type.Duration.Short, "Short"),
-                new FilterCapability("Long", Type.Duration.Long, "Long")
-            ],
-            false,
-            "DURATION"
-        ),
-        new FilterGroup(
             "Additional Content",
             [
                 new FilterCapability("Live", "LIVE", "Live"),
@@ -187,7 +171,7 @@ function search(query: string, type: SearchTypes | null, order: Order | null, fi
     if (filters === null) {
         throw new ScriptException("unreachable")
     }
-    if (order === "CHRONOLOGICAL") {
+    if (order === "CHRONOLOGICAL" || order === null) {
         order = Type.Order.Chronological
     }
     if (type === null) {
@@ -210,7 +194,7 @@ function search(query: string, type: SearchTypes | null, order: Order | null, fi
         case Type.Feed.Live:
             return new SearchLivePager(query, order)
         case Type.Feed.Videos:
-            return new SearchVideoPager(query, order, filters)
+            return new SearchVideoPager(query, order, 10)
         default:
             throw assert_exhaustive(type, "unreachable")
     }
@@ -218,80 +202,40 @@ function search(query: string, type: SearchTypes | null, order: Order | null, fi
 class SearchVideoPager extends VideoPager {
     private readonly url: URL
     private next_page: number
-    constructor(query: string, order: Order | null, filters: FilterQuery<FilterGroupIDs>) {
-        const url = new URL(`https://www.nicovideo.jp/search/${query}`)
+    constructor(query: string, order: Order, page_size: number) {
+        const url = new URL("https://nvapi.nicovideo.jp/v1/search/video")
+        url.searchParams.set("keyword", query)
 
         switch (order) {
-            case null:
-                // "Most popular"
-                url.searchParams.set("sort", "h")
-                break
             case Type.Order.Chronological:
-                url.searchParams.set("sort", "f")
+                url.searchParams.set("sortKey", "registeredAt")
                 break
             case Type.Order.Views:
-                url.searchParams.set("sort", "v")
+                url.searchParams.set("sortKey", "viewCount")
                 break
             case Type.Order.Favorites:
-                url.searchParams.set("sort", "likeCount")
+                url.searchParams.set("sortKey", "likeCount")
                 break
             default:
                 log(`Niconico log: unexpected ordering ${order}`)
-                url.searchParams.set("sort", "h")
+                url.searchParams.set("sortKey", "registeredAt")
                 break
         }
 
-        // order descending
-        url.searchParams.set("order", "d")
-
-        switch (filters["DURATION"]?.[0]) {
-            case Type.Duration.Short:
-                url.searchParams.set("l_range", "1")
-                break
-            case Type.Duration.Long:
-                url.searchParams.set("l_range", "2")
-                break
-            case undefined:
-                break
-            default:
-                throw new ScriptException(`unknown date filter ${filters.DURATION[0]}`)
-        }
-
-        switch (filters["DATE"]?.[0]) {
-            case Type.Date.LastHour:
-                url.searchParams.set("f_range", "4")
-                break
-            case Type.Date.Today:
-                url.searchParams.set("f_range", "1")
-                break
-            case Type.Date.LastWeek:
-                url.searchParams.set("f_range", "2")
-                break
-            case Type.Date.LastMonth:
-                url.searchParams.set("f_range", "3")
-                break
-            case undefined:
-                break
-            default:
-                throw new ScriptException(`unknown duration filter ${filters.DATE[0]}`)
-        }
+        url.searchParams.set("sortOrder", "desc")
 
         url.searchParams.set("page", "1")
+        url.searchParams.set("pageSize", page_size.toString())
 
-        const res = local_http.GET(url.toString(), {}, false)
+        const videos_response: SearchVideosResponse = JSON.parse(local_http.GET(
+            url.toString(),
+            { "X-Frontend-Id": "6", },
+            false
+        ).body)
 
-        if (!res.isOk) {
-            throw new ScriptException(`Failed request [${url.toString()}] (${res.code})`)
-        }
+        const platform_videos = videos_response.data.items.map(nico_video_to_PlatformVideo)
 
-        const root_element = local_dom_parser.parseFromString(res.body).querySelector('[data-video-list]')
-        if (root_element === undefined) {
-            super([], false)
-        } else {
-            const platform_videos: PlatformVideo[] = root_element?.querySelectorAll('[data-video-item]').map(format_video_search_results)
-
-            super(platform_videos, true)
-        }
+        super(platform_videos, videos_response.data.hasNext)
 
         this.url = url
         this.next_page = 2
@@ -299,25 +243,15 @@ class SearchVideoPager extends VideoPager {
     override nextPage(this: SearchVideoPager) {
         this.url.searchParams.set("page", this.next_page.toString())
 
-        const res = local_http.GET(this.url.toString(), {}, false)
+        const videos_response: SearchVideosResponse = JSON.parse(local_http.GET(
+            this.url.toString(),
+            { "X-Frontend-Id": "6", },
+            false
+        ).body)
 
-        if (!res.isOk) {
-            throw new ScriptException(`Failed request [${this.url.toString()}] (${res.code})`)
-        }
+        const platform_videos = videos_response.data.items.map(nico_video_to_PlatformVideo)
 
-        const root_element = local_dom_parser.parseFromString(res.body).querySelector('[data-video-list]')
-
-        if (root_element === undefined) {
-            this.hasMore = false
-            this.results = []
-            this.next_page = this.next_page + 1
-
-            return this
-        }
-
-        const platform_videos: PlatformVideo[] = root_element?.querySelectorAll('[data-video-item]').map(format_video_search_results)
-
-        this.hasMore = true
+        this.hasMore = videos_response.data.hasNext
         this.results = platform_videos
         this.next_page = this.next_page + 1
 
@@ -327,53 +261,15 @@ class SearchVideoPager extends VideoPager {
         return this.hasMore
     }
 }
-function format_video_search_results(root_element: DOMNode) {
-    const extracted_data = {
-        duration: root_element.getElementsByClassName("videoLength")?.[0]?.text,
-        thumbnail: root_element.getElementsByClassName("thumb")?.[0]?.getAttribute("src"),
-        id: root_element.getAttribute("data-video-id"),
-        title: root_element.getElementsByClassName("itemTitle")?.[0]?.firstChild?.text,
-        upload_date: root_element.getElementsByClassName("video_uploaded")?.[0]?.firstChild?.text,
-        view_count: root_element.getElementsByClassName("count view")?.[0]?.firstChild?.text
-    }
-
-    if (extracted_data.id === undefined || extracted_data.title === undefined || extracted_data.thumbnail === undefined || extracted_data.upload_date === undefined || extracted_data.duration === undefined || extracted_data.view_count === undefined) {
-        throw new ScriptException("missing data")
-    }
-
-    const video_url = `${VIDEO_URL_PREFIX}${extracted_data.id}`
-    const author_id = DEFAULT_AUTHOR
-
-    return new PlatformVideo({
-        id: new PlatformID(PLATFORM, extracted_data.id, plugin.config.id),
-        name: extracted_data.title,
-        thumbnails: new Thumbnails([new Thumbnail(extracted_data.thumbnail, 0)]),
-        duration: hhmmssToDuration(extracted_data.duration),
-        viewCount: parseInt(extracted_data.view_count.split(",").join("")),
-        url: video_url,
-        isLive: false,
-        // little hack to get the correct times
-        datetime: date_to_unix_seconds(extracted_data.upload_date + JST_OFFSET),
-        shareUrl: video_url,
-        author: new PlatformAuthorLink(
-            new PlatformID(PLATFORM, author_id.toString(), plugin.config.id),
-            MISSING_AUTHOR,
-            `${USER_URL_PREFIX}${author_id}`,
-            DEFAULT_AUTHOR_THUMB,
-        ),
-    })
-}
 class SearchLivePager extends VideoPager {
     private readonly url: URL
     private next_page: number
-    constructor(query: string, order: Order | null) {
+    constructor(query: string, order: Order) {
         const url = new URL("https://live.nicovideo.jp/search")
 
         url.searchParams.set("keyword", query)
 
         switch (order) {
-            case null:
-                break
             case Type.Order.Chronological:
                 break
             case Type.Order.Views:
@@ -591,7 +487,14 @@ function getContentDetails(video_url: string) {
                         false
                     ).body)
                     return new ContentPager(
-                        recommendations_response.data.items.map((item) => item.content).map(nico_video_to_PlatformVideo),
+                        recommendations_response.data.items
+                            .flatMap((item) => {
+                                if (item.contentType === "video") {
+                                    return item.content
+                                }
+                                return []
+                            })
+                            .map(nico_video_to_PlatformVideo),
                         false
                     )
                 }
@@ -702,13 +605,10 @@ function getChannelContents(url: string, type: ChannelTypeCapabilities | null, o
             case null:
                 return "registeredAt"
             case "CHRONOLOGICAL":
-
                 return "registeredAt"
             case Type.Order.Chronological:
-
                 return "registeredAt"
             case Type.Order.Favorites:
-
                 return "likeCount"
             case Type.Order.Views:
                 return "viewCount"
@@ -736,15 +636,13 @@ class ChannelVideoPager extends VideoPager {
 
         const channel_videos_response: ChannelVideosResponse = JSON.parse(local_http.GET(
             url.toString(),
-            {
-                "X-Frontend-Id": "6",
-            },
+            { "X-Frontend-Id": "6", },
             false
         ).body)
 
         const nicoVideos = channel_videos_response.data.items.map((x) => x.essential)
-        const platformVideos = nicoVideos.map(nico_video_to_PlatformVideo)
-        super(platformVideos, channel_videos_response.data.totalCount > page_size)
+        const platform_videos = nicoVideos.map(nico_video_to_PlatformVideo)
+        super(platform_videos, channel_videos_response.data.totalCount > page_size)
 
         this.url = url
         this.next_page = 2
@@ -753,15 +651,13 @@ class ChannelVideoPager extends VideoPager {
         this.url.searchParams.set("page", this.next_page.toString())
         const channel_videos_response: ChannelVideosResponse = JSON.parse(local_http.GET(
             this.url.toString(),
-            {
-                "X-Frontend-Id": "6",
-            },
+            { "X-Frontend-Id": "6", },
             false
         ).body)
 
         const nicoVideos = channel_videos_response.data.items.map((x) => x.essential)
-        const platformVideos = nicoVideos.map(nico_video_to_PlatformVideo)
-        this.results = platformVideos
+        const platform_videos = nicoVideos.map(nico_video_to_PlatformVideo)
+        this.results = platform_videos
 
         this.hasMore = channel_videos_response.data.totalCount > this.page_size * this.next_page
 
@@ -875,6 +771,7 @@ function getPlaylist(playlist_url: string): PlatformPlaylistDetails {
 
     const page_size = 100
 
+    // it's a logged in user playlist
     if (match_result === null) {
         if (!bridge.isLoggedIn()) {
             throw new LoginRequiredException("Failed to retrieve playlist, not logged in")
@@ -906,7 +803,7 @@ function getPlaylist(playlist_url: string): PlatformPlaylistDetails {
             })
         }
 
-        const url = `https://nvapi.nicovideo.jp/v2/users/me/mylists/${playlist_id}?pageSize=${page_size}&page=1`
+        const url = `https://nvapi.nicovideo.jp/v1/users/me/mylists/${playlist_id}?pageSize=${page_size}&page=1`
         const response: PlaylistResponse = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, true).body)
 
         return new PlatformPlaylistDetails({
@@ -1245,36 +1142,6 @@ function date_to_unix_seconds(date: string) {
     }
 
     return Math.round(Date.parse(date) / 1000)
-}
-
-/**
- * Format a duration string to a duration in seconds
- * @param durationStr Duration string format (hh:mm:ss)
- * @returns Duration in seconds
- */
-function hhmmssToDuration(durationStr: string): number {
-    if (!durationStr) {
-        throw new ScriptException("invalid string")
-    }
-
-    const parts = durationStr.split(":").map(Number)
-
-    if (parts.some(isNaN)) {
-        throw new ScriptException("invalid string")
-    }
-
-    if (parts.length == 3) {
-        if (parts[0] === undefined || parts[1] === undefined || parts[2] === undefined) {
-            throw new ScriptException("unreachable")
-        }
-        return parts[0] * 3600 + parts[1] * 60 + parts[2]
-    } else if (parts[1] !== undefined && parts[0] !== undefined) {
-        return parts[0] * 60 + parts[1]
-    } else if (parts.length == 1 && parts[0] !== undefined) {
-        return parts[0]
-    }
-
-    throw new ScriptException("invalid string")
 }
 
 /**

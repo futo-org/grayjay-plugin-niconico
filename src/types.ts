@@ -21,7 +21,7 @@ export type NiconicoSource = Required<Omit<Source<
 
 export type ChannelTypeCapabilities = typeof Type.Feed.Videos
 export type SearchTypes = typeof Type.Feed.Videos | typeof Type.Feed.Live
-export type FilterGroupIDs = "DURATION" | "DATE" | "ADDITIONAL_CONTENT"
+export type FilterGroupIDs = "ADDITIONAL_CONTENT"
 //#endregion
 
 //#region JSON types
@@ -96,9 +96,12 @@ export type VideoResponse = {
 }
 export type FeedResponse = {
     readonly data: {
-        readonly items: {
+        readonly items: ({
+            readonly contentType: "video"
             readonly content: Content
-        }[]
+        } | {
+            readonly contentType: "mylist"
+        })[]
     }
 }
 export type Content = {
@@ -167,6 +170,12 @@ export type ChannelVideosResponse = {
         readonly items: {
             readonly essential: Content
         }[]
+    }
+}
+export type SearchVideosResponse = {
+    readonly data: {
+        readonly hasNext: boolean
+        readonly items: Content[]
     }
 }
 export type PlaylistResponse = {

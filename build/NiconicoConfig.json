@@ -17,7 +17,7 @@
         "DOMParser"
     ],
     "allowEval": false,
-    "allowAllHttpHeaderAccess": true,
+    "allowAllHttpHeaderAccess": false,
     "allowUrls": [
         "nvapi.nicovideo.jp",
         "sug.search.nicovideo.jp",
