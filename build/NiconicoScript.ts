@@ -411,11 +411,6 @@ function getContentDetails(video_url: string) {
                 throw new ScriptException("unreachable")
             }
 
-            const domand_bid = response.headers["set-cookie"]?.[0]?.split(";")[0]?.split("=")[1]
-            if (domand_bid === undefined) {
-                throw new ScriptException("missing domand_bid")
-            }
-
             const hls: { readonly data: { readonly contentUrl: string } } = JSON.parse(response.body)
 
 
@@ -444,6 +439,11 @@ function getContentDetails(video_url: string) {
 
             const video = video_response.data.response.video
 
+            const client_id = local_http.getDefaultClient(false).clientId
+            if(client_id === undefined){
+                throw new ScriptException("missing http client id")
+            }
+
             return new PlatformVideoDetails({
                 id: new PlatformID(PLATFORM, video_id, plugin.config.id),
                 name: video.title,
@@ -466,8 +466,8 @@ function getContentDetails(video_url: string) {
                     duration: video.duration,
                     url: hls.data.contentUrl,
                     requestModifier: {
-                        headers: {
-                            Cookie: `domand_bid=${domand_bid}`
+                        options: {
+                            applyCookieClient: client_id
                         }
                     }
                 })]),

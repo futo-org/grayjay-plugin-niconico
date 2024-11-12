@@ -289,10 +289,6 @@ function getContentDetails(video_url) {
             if (response === undefined || raw_thread_response === undefined) {
                 throw new ScriptException("unreachable");
             }
-            const domand_bid = response.headers["set-cookie"]?.[0]?.split(";")[0]?.split("=")[1];
-            if (domand_bid === undefined) {
-                throw new ScriptException("missing domand_bid");
-            }
             const hls = JSON.parse(response.body);
             const thread_response = JSON.parse(raw_thread_response.body);
             const subtitles = thread_response.data.threads[0]?.comments.filter((comment) => comment.commands.includes("shita"));
@@ -313,6 +309,10 @@ function getContentDetails(video_url) {
                 vtt_text += "\n";
             }
             const video = video_response.data.response.video;
+            const client_id = local_http.getDefaultClient(false).clientId;
+            if (client_id === undefined) {
+                throw new ScriptException("missing http client id");
+            }
             return new PlatformVideoDetails({
                 id: new PlatformID(PLATFORM, video_id, plugin.config.id),
                 name: video.title,
@@ -330,8 +330,8 @@ function getContentDetails(video_url) {
                         duration: video.duration,
                         url: hls.data.contentUrl,
                         requestModifier: {
-                            headers: {
-                                Cookie: `domand_bid=${domand_bid}`
+                            options: {
+                                applyCookieClient: client_id
                             }
                         }
                     })]),
