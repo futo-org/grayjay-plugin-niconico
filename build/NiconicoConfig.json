@@ -1,0 +1,36 @@
+{
+    "name": "Niconico",
+    "description": "Niconico is the biggest video platform in Japan",
+    "author": "FUTO",
+    "authorUrl": "https://futo.org",
+    "platformUrl": "https://www.nicovideo.jp",
+    "sourceUrl": "https://plugins.grayjay.app/Niconico/NiconicoConfig.json",
+    "repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/niconico",
+    "scriptUrl": "./NiconicoScript.js",
+    "version": 1,
+    "iconUrl": "./NiconicoIcon.png",
+    "id": "99224109-ac6d-426f-a1c1-4c8051f946fd",
+    "scriptSignature": "",
+    "scriptPublicKey": "",
+    "packages": [
+        "Http",
+        "DOMParser"
+    ],
+    "allowEval": false,
+    "allowAllHttpHeaderAccess": false,
+    "allowUrls": [
+        "nvapi.nicovideo.jp",
+        "sug.search.nicovideo.jp",
+        "api.search.nicovideo.jp",
+        "live.nicovideo.jp",
+        "www.nicovideo.jp",
+        "public.nvcomment.nicovideo.jp"
+    ],
+    "authentication": {
+        "userAgent": "Mozilla/5.0 (Android 14; Mobile; rv:132.0) Gecko/132.0 Firefox/132.0",
+        "loginUrl": "https://account.nicovideo.jp/login",
+        "cookiesToFind": [
+            "user_session"
+        ]
+    }
+}
