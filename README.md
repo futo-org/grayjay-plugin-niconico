@@ -3,7 +3,12 @@
 ## TO-DO
 
 - handle region and premium block
-- continue revamp of existing code starting with get content. then add unimplemented apis
+- handle HD available with premium
+- getting the livestream HLS manifest file requires a websocket connection
+- playback tracker
+- play historical live streams
+- load user historical live streams and current livestream into creator feed
+- test get subscriptions with page size equal to 5
 
 ## notes
 

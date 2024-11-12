@@ -17,12 +17,14 @@
         "DOMParser"
     ],
     "allowEval": false,
+    "allowAllHttpHeaderAccess": true,
     "allowUrls": [
         "nvapi.nicovideo.jp",
         "sug.search.nicovideo.jp",
         "api.search.nicovideo.jp",
         "live.nicovideo.jp",
-        "www.nicovideo.jp"
+        "www.nicovideo.jp",
+        "public.nvcomment.nicovideo.jp"
     ],
     "authentication": {
         "userAgent": "Mozilla/5.0 (Android 14; Mobile; rv:132.0) Gecko/132.0 Firefox/132.0",

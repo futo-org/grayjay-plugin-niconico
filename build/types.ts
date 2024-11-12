@@ -2,7 +2,7 @@
 export type Settings = unknown
 
 export type NiconicoSource = Required<Omit<Source<
-    NiconicoCommentContext,
+    never,
     string,
     ChannelTypeCapabilities,
     SearchTypes,
@@ -12,27 +12,88 @@ export type NiconicoSource = Required<Omit<Source<
     "getSearchChannelContentsCapabilities"
     | "searchChannelContents"
     | "getLiveChatWindow"
-    | "searchPlaylists"
     | "saveState"
-    | "getContentRecommendations"
-    | "getChannelCapabilities"
     | "searchChannels"
+    | "getComments"
     | "getSubComments"
-    | "getChannelPlaylists"
     | "getPlaybackTracker"
 >>
 
-export type NiconicoCommentContext = {
-    readonly comment_id: string
-    /** video id */
-    readonly aweme_id: string
-}
 export type ChannelTypeCapabilities = typeof Type.Feed.Videos
 export type SearchTypes = typeof Type.Feed.Videos | typeof Type.Feed.Live
 export type FilterGroupIDs = "DURATION" | "DATE" | "ADDITIONAL_CONTENT"
 //#endregion
 
 //#region JSON types
+type ThreadTypes = "main" | "owner" | "easy"
+export type ThreadsResponse = {
+    readonly data: {
+        readonly threads: {
+            readonly fork: ThreadTypes
+            readonly comments: {
+                readonly vposMs: number
+                readonly body: string
+                readonly commands: ("184" | "shita" | "big" | "small" | "medium")[]
+            }[]
+        }[]
+    }
+}
+export type VideoResponse = {
+    readonly data: {
+        readonly metadata: {
+            readonly jsonLds: unknown
+        }
+        readonly response: {
+            readonly comment: {
+                readonly nvComment: {
+                    readonly server: string
+                    readonly threadKey: string
+                    readonly params: {
+                        readonly targets: {
+                            id: string,
+                            fork: ThreadTypes
+                        }[]
+                        readonly language: "ja-jp" | "en-us"
+                    }
+                }
+            }
+            readonly client: {
+                readonly watchTrackId: string
+            }
+            readonly media: {
+                readonly domand: {
+                    readonly audios: {
+                        readonly id: string
+                        readonly isAvailable: boolean
+                    }[]
+                    readonly videos: {
+                        readonly id: string
+                        readonly isAvailable: boolean
+                    }[]
+                    readonly accessRightKey: string
+                }
+            }
+            readonly owner: {
+                readonly id: number
+                nickname: string
+                iconUrl: string
+            }
+            readonly video: {
+                readonly title: string
+                readonly description: string
+                readonly count: {
+                    readonly view: number
+                    readonly like: number
+                }
+                readonly duration: number
+                readonly thumbnail: {
+                    readonly ogp: string
+                }
+                readonly registeredAt: string
+            }
+        }
+    }
+}
 export type FeedResponse = {
     readonly data: {
         readonly items: {
@@ -81,54 +142,28 @@ export type OnAirData = {
     }
     readonly beginAt: number
 }
-export type PageDataResponse = {
-    readonly comment: {
-        readonly nvComment: {
-            readonly params: unknown
-            readonly threadKey: string
-        }
-    }
-}
-export type PlaylistPageDataResponse = {
-    readonly initConfig: {
-        readonly user: {
-            readonly id: string
-        }
-    }
-}
-export type UserPageDataResponse = {
+export type UserResponse = {
     readonly state: {
         readonly userDetails: {
             readonly userDetails: {
-                readonly user: unknown
-            }
-        }
-    }
-}
-export type VideoPageDataResponse = {
-    readonly client: {
-        readonly watchTrackId: string
-    }
-    readonly media: {
-        readonly domand: {
-            readonly accessRightKey: string
-        }
-    }
-}
-export type CommentsResponse = {
-    readonly nicoComments: {
-        readonly data: {
-            readonly threads: {
-                readonly fork: "main"
-                readonly comments: {
-                    readonly body: string
+                readonly user: {
+                    readonly decoratedDescriptionHtml: string
+                    readonly followerCount: number
+                    readonly nickname: string
+                    readonly icons: {
+                        readonly large: string
+                    }
+                    readonly coverImage: null | {
+                        readonly ogpUrl: string
+                    }
                 }
-            }[]
+            }
         }
     }
 }
 export type ChannelVideosResponse = {
     readonly data: {
+        readonly totalCount: number
         readonly items: {
             readonly essential: Content
         }[]
@@ -137,10 +172,51 @@ export type ChannelVideosResponse = {
 export type PlaylistResponse = {
     readonly data: {
         readonly mylist: {
+            readonly name: string
+            readonly totalItemCount: number
+            readonly owner: {
+                iconUrl: string
+                id: string
+                name: string
+            }
             readonly items: {
                 readonly video: Content
             }[]
         }
+    }
+}
+export type WatchLaterResponse = {
+    readonly data: {
+        readonly watchLater: {
+            readonly totalCount: number
+            readonly hasNext: boolean
+            readonly items: {
+                readonly video: Content
+            }[]
+        }
+    }
+}
+export type SeriesResponse = {
+    readonly data: {
+        readonly totalCount: number
+        readonly detail: {
+            readonly createdAt: string
+            readonly title: string
+            readonly owner: {
+                readonly user: {
+                    readonly id: number
+                    readonly nickname: string
+                    readonly icons: {
+                        readonly large: string
+                    }
+                }
+            }
+            readonly id: string
+            readonly thumbnailUrl: string
+        }
+        readonly items: {
+            readonly video: Content
+        }[]
     }
 }
 export type UserPlaylistsResponse = {
@@ -155,11 +231,57 @@ export type UserSubscriptionsResponse = {
         readonly items: {
             readonly id: unknown
         }[]
+        readonly summary: {
+            readonly hasNext: boolean
+            readonly cursor: "cursorEnd" | string
+        }
     }
 }
-export type HLSResponse = {
+export type PlaylistSearchResponse = {
     readonly data: {
-        readonly contentUrl: string
+        readonly hasNext: boolean
+        readonly items: NiconicoList[]
     }
+}
+export type NiconicoList = {
+    readonly id: number
+    readonly title: string
+    readonly owner: {
+        readonly iconUrl: string
+        readonly id: string
+        readonly name: string
+    }
+    readonly thumbnailUrl: string
+    readonly videoCount: number
+}
+export type ChannelPlaylistsResponse = {
+    readonly data: {
+        readonly mylists: NiconicoChannelList[]
+    }
+}
+export type NiconicoChannelList = {
+    readonly id: number
+    readonly name: string
+    readonly owner: {
+        readonly iconUrl: string
+        readonly id: string
+        readonly name: string
+    }
+    readonly itemsCount: number
+}
+export type ChannelSeriesResponse = {
+    readonly data: {
+        readonly items: NiconicoChannelSeries[]
+        readonly totalCount: number
+    }
+}
+export type NiconicoChannelSeries = {
+    readonly id: number
+    readonly title: string
+    readonly thumbnailUrl: string
+    readonly owner: {
+        readonly id: string
+    }
+    readonly itemsCount: number
 }
 //#endregion

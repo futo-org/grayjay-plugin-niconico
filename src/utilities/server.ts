@@ -75,5 +75,5 @@ createServer((req, res) => {
     res.end("File not found")
     return
 }).listen(PORT, () => {
-    console.log(`Server running at http://${getLocalIPAddress()}:${PORT}`)
+    console.log(`Server running at http://${getLocalIPAddress()}:${PORT}/build/NiconicoConfig.json`)
 })

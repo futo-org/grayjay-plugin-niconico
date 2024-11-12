@@ -1,42 +1,51 @@
 //#region constants
 import type {
     ChannelVideosResponse,
-    CommentsResponse,
     Content,
     FeedResponse,
     FilterGroupIDs,
-    HLSResponse,
-    NiconicoCommentContext,
     NiconicoSource,
     OnAirData,
-    PageDataResponse,
-    PlaylistPageDataResponse,
     PlaylistResponse,
     SearchLiveVideosResponse,
     SearchSuggestionsResponse,
     SearchTypes,
     Settings,
-    UserPageDataResponse,
+    ThreadsResponse,
+    UserResponse,
     UserPlaylistsResponse,
     UserSubscriptionsResponse,
-    VideoPageDataResponse
+    VideoResponse,
+    ChannelTypeCapabilities,
+    NiconicoList,
+    PlaylistSearchResponse,
+    NiconicoChannelList,
+    ChannelPlaylistsResponse,
+    ChannelSeriesResponse,
+    NiconicoChannelSeries,
+    SeriesResponse,
+    WatchLaterResponse
 } from "./types"
 
 const PLATFORM = "Niconico" as const
 
 const URL_RECOMMENDED_FEED = "https://nvapi.nicovideo.jp/v1/recommend?recipeId=video_recommendation_recommend&sensitiveContents=mask&site=nicovideo&_frontendId=6&_frontendVersion=0" as const
-const URL_COMMENTS = "https://nv-comment.nicovideo.jp/v1/threads" as const
-const URL_FOLLOWING = "https://nvapi.nicovideo.jp/v1/users/me/following/users?pageSize=100" as const
+const URL_FOLLOWING = "https://nvapi.nicovideo.jp/v1/users/me/following/users" as const
 const URL_PLAYLISTS = "https://nvapi.nicovideo.jp/v1/users/me/mylists" as const
 const USER_URL_PREFIX = "https://www.nicovideo.jp/user/" as const
 const VIDEO_URL_PREFIX = "https://www.nicovideo.jp/watch/" as const
 const LIVE_URL_PREFIX = "https://live.nicovideo.jp/watch/" as const
+const LOGGED_IN_USER_LISTS_PREFIX = "https://www.nicovideo.jp/my/mylist/" as const
+const SEARCH_PLAYLISTS_URL = "https://nvapi.nicovideo.jp/v1/search/list" as const
 
-const NICO_VIDEO_URL_REGEX = /.*nicovideo.jp\/watch\/(.*)/
-const NICO_CHANNEL_URL_REGEX = /.*nicovideo.jp\/user\/(.*)/
-const NICO_PLAYLIST_URL_REGEX = /.*nicovideo.jp\/my\/mylist\/(.*)/
+const NICO_VIDEO_URL_REGEX = /^https:\/\/(live|www)\.nicovideo\.jp\/watch\/(lv[0-9]{9}|sm[0-9]{8})$/
+const NICO_CHANNEL_URL_REGEX = /^https:\/\/www\.nicovideo\.jp\/user\/([0-9]*?)$/
+const LOGGED_IN_USER_LISTS_REGEX = /^https:\/\/www\.nicovideo\.jp\/my\/(watchlater|mylist\/([0-9]{8}))$/
+const PLAYLIST_URL_REGEX = /^https:\/\/www\.nicovideo\.jp\/user\/([0-9]*?)\/(series|mylist)\/([0-9]*?)$/
 
 const JST_OFFSET = "+09:00"
+// determines what subtitles are available and likely other things
+const ACCEPT_LANGUAGE = "en-US,en;q=0.7,es;q=0.3"
 
 const HARDCODED_THUMBNAIL_QUALITY = 1080 as const
 const MISSING_AUTHOR = "Missing Creator"
@@ -57,6 +66,7 @@ const local_source: NiconicoSource = {
     enable,
     disable,
     getHome,
+    getContentRecommendations,
     searchSuggestions,
     search,
     getSearchCapabilities,
@@ -64,10 +74,12 @@ const local_source: NiconicoSource = {
     getContentDetails,
     isChannelUrl,
     getChannel,
+    getChannelCapabilities,
     getChannelContents,
+    getChannelPlaylists,
+    searchPlaylists,
     isPlaylistUrl,
     getPlaylist,
-    getComments,
     getUserPlaylists,
     getUserSubscriptions,
 }
@@ -115,6 +127,10 @@ function getHome() {
     const platform_videos = feed_response.data.items.map((x) => nico_video_to_PlatformVideo(x.content))
 
     return new VideoPager(platform_videos, false)
+}
+function getContentRecommendations(url: string): ContentPager {
+    console.log(`Niconico log: content recommendations not implemented for ${url}`)
+    return new ContentPager([], false)
 }
 //#endregion
 
@@ -443,131 +459,187 @@ function format_live_search_results(live_broadcast: OnAirData): PlatformVideo {
 //#endregion
 
 //#region content
-function getContentDetails(videoUrl: string) {
-    const videoId = getVideoIdFromUrl(videoUrl)
-    // Docs: https://w.atwiki.jp/nicoapi/pages/16.html
-    const getThumbInfoUrl = `https://ext.nicovideo.jp/api/getthumbinfo/${videoId}`
-
-    // For video details in XML format
-    const [videoXMLRes, videoHTMLRes] = local_http.batch().GET(
-        getThumbInfoUrl,
-        {}, false
-    ).GET(
-        videoUrl,
-        {}, false
-    ).execute()
-
-    if (videoXMLRes === undefined || videoHTMLRes === undefined) {
-        throw new ScriptException("unreachable")
+function getContentDetails(video_url: string) {
+    const match_result = video_url.match(NICO_VIDEO_URL_REGEX)
+    if (match_result === null || match_result[1] === undefined || match_result[2] === undefined) {
+        throw new ScriptException("regex error")
     }
-    if (!videoXMLRes.isOk) {
-        throw new ScriptException(`Failed request [${getThumbInfoUrl}] (${videoXMLRes.code})`)
+    const video_type = match_result[1]
+    const video_id = match_result[2]
+
+    switch (video_type) {
+        case "www": {
+            const res = local_http.GET(video_url, { "Accept-Language": ACCEPT_LANGUAGE }, false)
+
+            const data = local_dom_parser.parseFromString(res.body).getElementsByName("server-response")[0]?.getAttribute("content")
+
+            if (data === undefined) {
+                throw new ScriptException("missing server response data")
+            }
+            const video_response: VideoResponse = JSON.parse(data)
+
+            const audio_id = video_response.data.response.media.domand.audios[0]?.id
+            if (audio_id === undefined) {
+                throw new ScriptException("missing audio track")
+            }
+            const outputs = video_response.data.response.media.domand.videos.filter((video) => video.isAvailable).map((video) => {
+                return [video.id, audio_id]
+            })
+
+            const thread_id = video_response.data.response.comment.nvComment.params.targets.find((target) => target.fork === "main")?.id
+            const language = video_response.data.response.comment.nvComment.params.language
+
+            const [response, raw_thread_response] = local_http
+                .batch()
+                .POST(
+                    `https://nvapi.nicovideo.jp/v1/watch/${video_id}/access-rights/hls?actionTrackId=${video_response.data.response.client.watchTrackId}`,
+                    JSON.stringify({ outputs }),
+                    {
+                        "x-access-right-key": video_response.data.response.media.domand.accessRightKey,
+                        "x-request-with": "nicovideo",
+                        "x-frontend-id": "6"
+                    },
+                    false
+                ).POST(
+                    `${video_response.data.response.comment.nvComment.server}/v1/threads`,
+                    JSON.stringify({
+                        params: { targets: [{ "id": thread_id, fork: "main" }], language },
+                        threadKey: video_response.data.response.comment.nvComment.threadKey,
+                        additionals: {}
+                    }),
+                    { "X-Frontend-Id": "6" },
+                    false
+                ).execute()
+
+            if (response === undefined || raw_thread_response === undefined) {
+                throw new ScriptException("unreachable")
+            }
+
+            const domand_bid = response.headers["set-cookie"]?.[0]?.split(";")[0]?.split("=")[1]
+            if (domand_bid === undefined) {
+                throw new ScriptException("missing domand_bid")
+            }
+
+            const hls: { readonly data: { readonly contentUrl: string } } = JSON.parse(response.body)
+
+
+            const thread_response: ThreadsResponse = JSON.parse(raw_thread_response.body)
+            const subtitles = thread_response.data.threads[0]?.comments.filter((comment) => comment.commands.includes("shita"))
+
+            if (subtitles === undefined) {
+                log("missing subtitles")
+                throw new ScriptException("missing subtitles")
+            }
+            subtitles.sort((a, b) => a.vposMs - b.vposMs)
+
+            // on niconico subtitles are displayed for 3 seconds each
+            const three_seconds = 3 * 1000
+            const convert = milliseconds_to_WebVTT_timestamp
+
+            let vtt_text = `WEBVTT ${language}\n`
+            vtt_text += "\n"
+
+            for (const comment of subtitles) {
+                const end = comment.vposMs + three_seconds
+                vtt_text += `${convert(comment.vposMs)} --> ${convert(end)}\n`
+                vtt_text += `${comment.body}\n`
+                vtt_text += "\n"
+            }
+
+            const video = video_response.data.response.video
+
+            return new PlatformVideoDetails({
+                id: new PlatformID(PLATFORM, video_id, plugin.config.id),
+                name: video.title,
+                author: new PlatformAuthorLink(
+                    new PlatformID(PLATFORM, video_response.data.response.owner.id.toString(), plugin.config.id),
+                    video_response.data.response.owner.nickname,
+                    `${USER_URL_PREFIX}${video_response.data.response.owner.id}`,
+                    video_response.data.response.owner.iconUrl
+                ),
+                url: video_url,
+                thumbnails: new Thumbnails([new Thumbnail(video.thumbnail.ogp, HARDCODED_THUMBNAIL_QUALITY)]),
+                duration: video.duration,
+                viewCount: video.count.view,
+                isLive: false,
+                shareUrl: video_url,
+                datetime: date_to_unix_seconds(video.registeredAt),
+                description: video.description,
+                video: new VideoSourceDescriptor([new HLSSource({
+                    name: "Niconico HLS",
+                    duration: video.duration,
+                    url: hls.data.contentUrl,
+                    requestModifier: {
+                        headers: {
+                            Cookie: `domand_bid=${domand_bid}`
+                        }
+                    }
+                })]),
+                rating: new RatingLikes(video.count.like),
+                subtitles: [{
+                    name: language,
+                    url: `${video_response.data.response.comment.nvComment.server}/v1/threads`,
+                    format: "text/vtt",
+                    getSubtitles: () => {
+                        return vtt_text
+                    }
+                }],
+                getContentRecommendations: () => {
+                    const recommendations_response: FeedResponse = JSON.parse(local_http.GET(
+                        `https://nvapi.nicovideo.jp/v1/recommend?recipeId=video_watch_recommendation&videoId=${video_id}&limit=25&site=nicovideo&_frontendId=6`,
+                        {},
+                        false
+                    ).body)
+                    return new ContentPager(
+                        recommendations_response.data.items.map((item) => item.content).map(nico_video_to_PlatformVideo),
+                        false
+                    )
+                }
+            })
+        }
+
+        // Getting the livestream HLS manifest file requires a websocket connection
+        case "live": {
+            if (1 === parseInt("1")) {
+                throw new ScriptException("Live streams are not supported")
+            }
+
+            return new PlatformVideoDetails({
+                id: new PlatformID(PLATFORM, "ASdf", plugin.config.id),
+                name: "string",
+                author: new PlatformAuthorLink(
+                    new PlatformID(PLATFORM, "ASdf", plugin.config.id),
+                    "sdg",
+                    "aasdg",
+                    "asdfs",
+                    11
+                ),
+                url: video_url,
+                thumbnails: new Thumbnails([new Thumbnail("asdf", HARDCODED_THUMBNAIL_QUALITY)]),
+                duration: 11,
+                viewCount: 11,
+                isLive: false,
+                shareUrl: "string",
+                datetime: 11,
+                description: "string",
+                video: new VideoSourceDescriptor([]),
+                live: new HLSSource({
+                    name: "string",
+                    duration: 11,
+                    url: "https://liveedge201.dmc.nico/hlslive/ht2_nicolive/nicolive-production-pg59405434356296_a873804bbc943ec8b2245b443f0d88a7d3acf86a6fab1f7382252b003a918506/master.m3u8?ht2_nicolive=136934864.g85qz0ipl9_smoyep_gra2qp1hdk2j"
+                }),
+                rating: new RatingLikes(11),
+                subtitles: [],
+                getContentRecommendations: () => new ContentPager([], false)
+            })
+        }
+        default:
+            throw new ScriptException(`unexpected video type ${video_type}`)
     }
-    if (!videoHTMLRes.isOk) {
-        throw new ScriptException(`Failed request [${videoUrl}] (${videoHTMLRes.code})`)
-    }
-
-    const videoXML = videoXMLRes.body
-    const videoHTML = videoHTMLRes.body
-
-    // Video no longer available
-    if (videoHTML.includes("お探しの動画は視聴できません")) {
-        throw new ScriptException("The video you are looking for cannot be viewed.")
-    }
-
-    // Video not available in this region
-    if (videoHTML.includes("この動画は投稿( アップロード )された地域と同じ地域からのみ視聴できます。")) {
-        throw new ScriptException("This video can only be viewed from the same region where it was posted (uploaded).")
-    }
-
-    // The HLS endpoint needs to be fetched separately
-    const { actionTrackId, accessRightKey } = getCSRFTokensFromVideoDetailHTML(videoHTML)
-
-    const hlsEndpoint = fetchHLSEndpoint(videoId, actionTrackId, accessRightKey)
-    //const hlsEndpoint = "http://sample.vodobox.net/skate_phantom_flex_4k/skate_phantom_flex_4k.m3u8"
-
-    const platformVideo = nicoVideoDetailsToPlatformVideoDetails(videoXML, hlsEndpoint)
-
-    return platformVideo
 }
 
 function isContentDetailsUrl(url: string) {
     return NICO_VIDEO_URL_REGEX.test(url)
-}
-//#endregion
-
-//#region comments
-function getComments(videoUrl: string): NiconicoCommentPager {
-    const videoHTMLRes = local_http.GET(videoUrl, {}, false)
-
-    if (!videoHTMLRes.isOk) {
-        throw new ScriptException(`Failed request [${videoUrl}] (${videoHTMLRes.code})`)
-    }
-
-    // Need data embedded in video HTML to make comments request
-    const regex_thing = /data-api-data="(.*?)"/.exec(videoHTMLRes.body)
-    if (regex_thing === null) {
-        throw new ScriptException("regex error")
-    }
-    const encodedPageData = regex_thing[1]
-    if (encodedPageData === undefined) {
-        throw new ScriptException("regex error")
-    }
-    const pageData: PageDataResponse = JSON.parse(encodedPageData.replace(/&quot;/g, `"`))
-
-    const videoCommentsRes = local_http.POST(
-        URL_COMMENTS,
-        JSON.stringify({
-            params: pageData.comment.nvComment.params,
-            threadKey: pageData.comment.nvComment.threadKey,
-            additionals: {},
-        }),
-        {
-            "x-frontend-id": "6",
-        },
-        false
-    )
-
-    if (!videoCommentsRes.isOk) {
-        throw new ScriptException(`Failed request [${URL_COMMENTS}] (${videoCommentsRes.code})`)
-    }
-
-    const comments_response: CommentsResponse = JSON.parse(videoCommentsRes.body)
-    const temp = comments_response.nicoComments.data.threads.find((x) => x.fork === "main")
-    if (temp === undefined) {
-        throw new ScriptException("missing main comments")
-    }
-    const comments = temp.comments
-
-    log(comments)
-
-    /*
-    const platform_comments = nicoComments.map((comment) => {
-        return new Comment({
-            contextUrl: videoUrl,
-            author: new PlatformAuthorLink(
-                new PlatformID(PLATFORM, comment.id, config.id, PLATFORM_CLAIMTYPE),
-                "", // Does not exist on comments endpoint
-                `https://www.nicovideo.jp/user/${comment.userId}`,
-                "", // Does not exist on comments endpoint
-            ),
-            message: comment.body,
-            rating: new RatingLikes(comment.score),
-            date: dateToUnixSeconds(comment.postedAt),
-            replyCount: 0, // Does not exist
-        })
-    })
-
-    // Reverse comments for proper date order
-    const reversed = platform_comments.toReversed()
-    */
-
-    return new NiconicoCommentPager()
-}
-class NiconicoCommentPager extends CommentPager<NiconicoCommentContext> {
-    constructor() {
-        super([], false)
-    }
 }
 //#endregion
 
@@ -577,155 +649,495 @@ function isChannelUrl(url: string) {
 }
 
 function getChannel(url: string) {
-    const res = local_http.GET(url, {}, false)
+    const match_result = url.match(NICO_CHANNEL_URL_REGEX)
+    if (match_result === null) {
+        throw new ScriptException("regex error")
+    }
+    const user_id = match_result[1]
+    if (user_id === undefined) {
+        throw new ScriptException("regex error")
+    }
+
+    const res = local_http.GET(`https://www.nicovideo.jp/user/${user_id}/video`, {}, false)
 
     if (!res.isOk) {
         throw new ScriptException(`Failed request [${url}] (${res.code})`)
     }
 
-    const user = getUserDataFromHTML(res.body)
-    log(user)
-    return new PlatformChannel({
-        id: new PlatformID(PLATFORM, "String(user.id)", plugin.config.id),
-        name: "user.nickname",
-        thumbnail: "user.icons?.large",
-        banner: "user.coverImage?.smartphoneUrl",
-        subscribers: 0,
-        description: "unescapeHtmlEntities(user.strippedDescription)",
-        url
-    })
-    // return new PlatformChannel({
-    //     id: new PlatformID(PLATFORM, String(user.id), plugin.config.id),
-    //     name: user.nickname,
-    //     thumbnail: user.icons?.large,
-    //     banner: user.coverImage?.smartphoneUrl,
-    //     subscribers: user.followerCount || 0,
-    //     description: unescapeHtmlEntities(user.strippedDescription),
-    //     url
-    // })
-}
+    const user = get_data_from_html(res.body)
 
-function getChannelContents(channel_url: string) {
-    return new ChannelContentsPager(channel_url)
+    const channel = {
+        id: new PlatformID(PLATFORM, user_id, plugin.config.id),
+        name: user.nickname,
+        thumbnail: user.icons.large,
+        subscribers: user.followerCount,
+        description: user.decoratedDescriptionHtml,
+        url
+    }
+
+    return user.coverImage === null
+        ? new PlatformChannel(channel)
+        : new PlatformChannel({ ...channel, banner: user.coverImage.ogpUrl })
 }
-class ChannelContentsPager extends VideoPager {
-    constructor(channel_url: string) {
-        const userId = getUserIdFromURL(channel_url)
-        const searchUrl = `https://nvapi.nicovideo.jp/v3/users/${userId}/videos?sortKey=registeredAt&sortOrder=desc&sensitiveContents=mask&pageSize=100&page=1`
-        const res = local_http.GET(
-            searchUrl,
+function getChannelCapabilities(): ResultCapabilities<never, ChannelTypeCapabilities> {
+    return new ResultCapabilities<never, ChannelTypeCapabilities>(
+        [Type.Feed.Videos],
+        [Type.Order.Chronological, Type.Order.Favorites, Type.Order.Views],
+        []
+    )
+}
+function getChannelContents(url: string, type: ChannelTypeCapabilities | null, order: Order | null, filters: FilterQuery<never> | null): ContentPager {
+    const match_result = url.match(NICO_CHANNEL_URL_REGEX)
+    if (match_result === null || match_result[1] === undefined) {
+        throw new ScriptException("regex error")
+    }
+    const user_id = match_result[1]
+
+    if (filters !== null) {
+        throw new ScriptException("unreachable")
+    }
+
+    const sort_key = (() => {
+        switch (order) {
+            case null:
+                return "registeredAt"
+            case "CHRONOLOGICAL":
+
+                return "registeredAt"
+            case Type.Order.Chronological:
+
+                return "registeredAt"
+            case Type.Order.Favorites:
+
+                return "likeCount"
+            case Type.Order.Views:
+                return "viewCount"
+            default:
+                throw new ScriptException("unreachable")
+        }
+    })()
+
+    if (type === null) {
+        log("Niconico log: channel content type is null defaulting to Videos")
+    }
+
+    return new ChannelVideoPager(user_id, 100, sort_key)
+}
+class ChannelVideoPager extends VideoPager {
+    private next_page: number
+    private readonly url: URL
+    constructor(user_id: string, private readonly page_size: number, sort_key: "registeredAt" | "viewCount" | "likeCount") {
+        const url = new URL(`https://nvapi.nicovideo.jp/v3/users/${user_id}/videos`)
+        url.searchParams.set("sensitiveContents", "mask")
+        url.searchParams.set("sortOrder", "desc")
+        url.searchParams.set("pageSize", page_size.toString())
+        url.searchParams.set("sortKey", sort_key)
+        url.searchParams.set("page", "1")
+
+        const channel_videos_response: ChannelVideosResponse = JSON.parse(local_http.GET(
+            url.toString(),
             {
                 "X-Frontend-Id": "6",
             },
             false
-        )
-
-        if (!res.isOk) {
-            throw new ScriptException(`Failed request [${searchUrl}] (${res.code})`)
-        }
-
-        const channel_videos_response: ChannelVideosResponse = JSON.parse(res.body)
+        ).body)
 
         const nicoVideos = channel_videos_response.data.items.map((x) => x.essential)
         const platformVideos = nicoVideos.map(nico_video_to_PlatformVideo)
-        super(platformVideos, false)
+        super(platformVideos, channel_videos_response.data.totalCount > page_size)
+
+        this.url = url
+        this.next_page = 2
     }
-    override nextPage(this: ChannelContentsPager) {
+    override nextPage(this: ChannelVideoPager) {
+        this.url.searchParams.set("page", this.next_page.toString())
+        const channel_videos_response: ChannelVideosResponse = JSON.parse(local_http.GET(
+            this.url.toString(),
+            {
+                "X-Frontend-Id": "6",
+            },
+            false
+        ).body)
+
+        const nicoVideos = channel_videos_response.data.items.map((x) => x.essential)
+        const platformVideos = nicoVideos.map(nico_video_to_PlatformVideo)
+        this.results = platformVideos
+
+        this.hasMore = channel_videos_response.data.totalCount > this.page_size * this.next_page
+
+        this.next_page = this.next_page + 1
+
         return this
     }
-    override hasMorePagers(this: ChannelContentsPager): boolean {
+    override hasMorePagers(this: ChannelVideoPager): boolean {
         return this.hasMore
     }
+}
+function getChannelPlaylists(url: string): PlaylistPager {
+    const match_result = url.match(NICO_CHANNEL_URL_REGEX)
+    if (match_result === null || match_result[1] === undefined) {
+        throw new ScriptException("regex error")
+    }
+    const user_id = match_result[1]
+
+    // first load playlists then load series after that
+    return new ChannelPlaylistsPager(user_id, 100)
+}
+class ChannelPlaylistsPager extends PlaylistPager {
+    private next_page: number
+    constructor(private readonly user_id: string, private readonly page_size: number) {
+        const search_response: ChannelPlaylistsResponse = JSON.parse(local_http.GET(
+            `https://nvapi.nicovideo.jp/v1/users/${user_id}/mylists`,
+            { "X-Frontend-Id": "6" },
+            false
+        ).body)
+
+        const first_page = 1
+
+        const url = new URL(`https://nvapi.nicovideo.jp/v1/users/${user_id}/series`)
+        url.searchParams.set("page", first_page.toString())
+        url.searchParams.set("pageSize", page_size.toString())
+        const series_search_response: ChannelSeriesResponse = JSON.parse(local_http.GET(
+            url.toString(),
+            { "X-Frontend-Id": "6" },
+            false
+        ).body)
+
+        super(
+            [
+                ...search_response.data.mylists.map(format_channel_playlist),
+                ...series_search_response.data.items.map(format_channel_series)
+            ],
+            series_search_response.data.totalCount > first_page * page_size
+        )
+
+        this.next_page = 2
+    }
+    override nextPage(this: ChannelPlaylistsPager): ChannelPlaylistsPager {
+        const url = new URL(`https://nvapi.nicovideo.jp/v1/users/${this.user_id}/series`)
+        url.searchParams.set("page", this.next_page.toString())
+        url.searchParams.set("pageSize", this.page_size.toString())
+        const search_response: ChannelSeriesResponse = JSON.parse(local_http.GET(
+            url.toString(),
+            { "X-Frontend-Id": "6" },
+            false
+        ).body)
+
+        this.results = search_response.data.items.map(format_channel_series)
+        this.hasMore = search_response.data.totalCount > this.next_page * this.page_size
+
+        this.next_page = this.next_page + 1
+
+        return this
+    }
+    override hasMorePagers(this: ChannelPlaylistsPager): boolean {
+        return this.hasMore
+    }
+}
+function format_channel_playlist(playlist: NiconicoChannelList): PlatformPlaylist {
+    return new PlatformPlaylist({
+        id: new PlatformID(PLATFORM, playlist.id.toString(), plugin.config.id),
+        name: playlist.name,
+        author: new PlatformAuthorLink(
+            new PlatformID(PLATFORM, playlist.owner.id, plugin.config.id),
+            playlist.owner.name,
+            `${USER_URL_PREFIX}${playlist.owner.id}`,
+            playlist.owner.iconUrl
+        ),
+        url: `https://www.nicovideo.jp/user/${playlist.owner.id}/mylist/${playlist.id}`,
+        videoCount: playlist.itemsCount
+    })
+}
+function format_channel_series(playlist: NiconicoChannelSeries): PlatformPlaylist {
+    return new PlatformPlaylist({
+        id: new PlatformID(PLATFORM, playlist.id.toString(), plugin.config.id),
+        name: playlist.title,
+        author: new PlatformAuthorLink(
+            new PlatformID(PLATFORM, playlist.owner.id, plugin.config.id),
+            MISSING_AUTHOR,
+            `${USER_URL_PREFIX}${playlist.owner.id}`
+        ),
+        url: `https://www.nicovideo.jp/user/${playlist.owner.id}/series/${playlist.id}`,
+        videoCount: playlist.itemsCount,
+        thumbnail: playlist.thumbnailUrl,
+        thumbnails: new Thumbnails([new Thumbnail(playlist.thumbnailUrl, HARDCODED_THUMBNAIL_QUALITY)])
+    })
 }
 //#endregion
 
 //#region playlists
 function isPlaylistUrl(url: string) {
-    return NICO_PLAYLIST_URL_REGEX.test(url)
+    return PLAYLIST_URL_REGEX.test(url) || LOGGED_IN_USER_LISTS_REGEX.test(url)
 }
 
 function getPlaylist(playlist_url: string): PlatformPlaylistDetails {
-    const playlistId = getPlaylistIdFromURL(playlist_url)
-    const playlistApiUrl = `https://nvapi.nicovideo.jp/v1/users/me/mylists/${playlistId}?pageSize=100&page=1`
+    const match_result = playlist_url.match(PLAYLIST_URL_REGEX)
 
-    // TODO load more than just user playlists
-    if (!bridge.isLoggedIn()) {
-        throw new LoginRequiredException("Failed to retrieve playlist, not logged in")
+    const page_size = 100
+
+    if (match_result === null) {
+        if (!bridge.isLoggedIn()) {
+            throw new LoginRequiredException("Failed to retrieve playlist, not logged in")
+        }
+
+        const playlist_id = playlist_url.match(LOGGED_IN_USER_LISTS_REGEX)?.[2]
+
+        // it's a watch later playlist
+        if (playlist_id === undefined) {
+            const url = `https://nvapi.nicovideo.jp/v1/users/me/watch-later?sortKey=addedAt&sortOrder=desc&pageSize=${page_size}&page=1`
+            const response: WatchLaterResponse = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, true).body)
+
+            return new PlatformPlaylistDetails({
+                id: new PlatformID(PLATFORM, "watch-later", plugin.config.id),
+                name: "Watch Later",
+                author: new PlatformAuthorLink(
+                    new PlatformID(PLATFORM, DEFAULT_AUTHOR.toString(), plugin.config.id),
+                    MISSING_AUTHOR,
+                    `${USER_URL_PREFIX}${DEFAULT_AUTHOR}`,
+                    DEFAULT_AUTHOR_THUMB
+                ),
+                url: "https://www.nicovideo.jp/my/watchlater",
+                videoCount: response.data.watchLater.totalCount,
+                contents: new WatchLaterVideoPager(
+                    response.data.watchLater.items.map((item) => item.video),
+                    response.data.watchLater.hasNext,
+                    page_size
+                )
+            })
+        }
+
+        const url = `https://nvapi.nicovideo.jp/v2/users/me/mylists/${playlist_id}?pageSize=${page_size}&page=1`
+        const response: PlaylistResponse = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, true).body)
+
+        return new PlatformPlaylistDetails({
+            id: new PlatformID(PLATFORM, playlist_id, plugin.config.id),
+            name: response.data.mylist.name,
+            author: new PlatformAuthorLink(
+                new PlatformID(PLATFORM, response.data.mylist.owner.id, plugin.config.id),
+                response.data.mylist.owner.name,
+                `${USER_URL_PREFIX}${response.data.mylist.owner.id}`,
+                response.data.mylist.owner.iconUrl
+            ),
+            url: `https://www.nicovideo.jp/my/mylist/${playlist_id}`,
+            videoCount: response.data.mylist.totalItemCount,
+            contents: new LoggedInPlaylistVideoPager(
+                response.data.mylist.items.map((item) => item.video),
+                response.data.mylist.totalItemCount > page_size * 1,
+                playlist_id,
+                page_size
+            )
+        })
     }
 
-    const [playlistHttpRes, playlistApiRes] = local_http
-        .batch()
-        .GET(
-            playlist_url,
-            { "X-Frontend-Id": "6" },
-            true
-        )
-        .GET(
-            playlistApiUrl,
-            { "X-Frontend-Id": "6" },
-            true,
-        )
-        .execute()
-
-    if (playlistHttpRes === undefined || playlistApiRes === undefined) {
+    const user_id = match_result[1]
+    const type: "mylist" | "series" = match_result[2] as "mylist" | "series"
+    const playlist_id = match_result[3]
+    if (user_id === undefined || playlist_id === undefined) {
         throw new ScriptException("unreachable")
     }
 
-    if (!playlistHttpRes.isOk) {
-        throw new ScriptException(`Failed request [${playlist_url}] (${playlistHttpRes.code})`)
+    switch (type) {
+        case "mylist": {
+            const url = `https://nvapi.nicovideo.jp/v2/mylists/${playlist_id}?pageSize=${page_size}&page=1&sensitiveContents=mask`
+            const response: PlaylistResponse = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, false).body)
+
+            return new PlatformPlaylistDetails({
+                id: new PlatformID(PLATFORM, playlist_id, plugin.config.id),
+                name: response.data.mylist.name,
+                author: new PlatformAuthorLink(
+                    new PlatformID(PLATFORM, response.data.mylist.owner.id, plugin.config.id),
+                    response.data.mylist.owner.name,
+                    `${USER_URL_PREFIX}${response.data.mylist.owner.id}`,
+                    response.data.mylist.owner.iconUrl
+                ),
+                url: `https://www.nicovideo.jp/user/${response.data.mylist.owner.id}/mylist/${playlist_id}`,
+                videoCount: response.data.mylist.totalItemCount,
+                contents: new PlaylistVideoPager(
+                    response.data.mylist.items.map((item) => item.video),
+                    response.data.mylist.totalItemCount > page_size * 1,
+                    playlist_id,
+                    page_size
+                )
+            })
+        }
+        case "series": {
+            const url = `https://nvapi.nicovideo.jp/v2/series/${playlist_id}?page=1&sensitiveContents=mask&pageSize=${page_size}`
+            const response: SeriesResponse = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, false).body)
+
+            return new PlatformPlaylistDetails({
+                id: new PlatformID(PLATFORM, playlist_id, plugin.config.id),
+                name: response.data.detail.title,
+                author: new PlatformAuthorLink(
+                    new PlatformID(PLATFORM, response.data.detail.owner.user.id.toString(), plugin.config.id),
+                    response.data.detail.owner.user.nickname,
+                    `${USER_URL_PREFIX}${response.data.detail.owner.user.id}`,
+                    response.data.detail.owner.user.icons.large
+                ),
+                url: `https://www.nicovideo.jp/user/${response.data.detail.owner.user.id}/series/${playlist_id}`,
+                videoCount: response.data.totalCount,
+                contents: new SeriesVideoPager(
+                    response.data.items.map((item) => item.video),
+                    response.data.totalCount > page_size * 1,
+                    playlist_id,
+                    page_size
+                ),
+                thumbnails: new Thumbnails([new Thumbnail(response.data.detail.thumbnailUrl, HARDCODED_THUMBNAIL_QUALITY)]),
+                datetime: date_to_unix_seconds(response.data.detail.createdAt),
+                thumbnail: response.data.detail.thumbnailUrl
+            })
+        }
+        default:
+            throw assert_exhaustive(type, "unreachable")
     }
+}
+class WatchLaterVideoPager extends VideoPager {
+    private next_page: number
+    constructor(initial_videos: Content[], has_more: boolean, private readonly page_size: number) {
+        super(initial_videos.map(nico_video_to_PlatformVideo), has_more)
 
-    if (!playlistApiRes.isOk) {
-        throw new ScriptException(`Failed request [${playlistApiUrl}] (${playlistApiRes.code})`)
+        this.next_page = 2
     }
+    override nextPage(this: WatchLaterVideoPager): WatchLaterVideoPager {
+        const url = `https://nvapi.nicovideo.jp/v1/users/me/watch-later?sortKey=addedAt&sortOrder=desc&pageSize=${this.page_size}&page=${this.next_page}`
+        const response: WatchLaterResponse = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, true).body)
 
-    const playlist_response: PlaylistResponse = JSON.parse(playlistApiRes.body)
+        this.results = response.data.watchLater.items.map((item) => item.video).map(nico_video_to_PlatformVideo)
+        this.hasMore = response.data.watchLater.hasNext
 
-    const nicoPlaylist = playlist_response.data.mylist
-    const platformVideos = nicoPlaylist.items.map((x) => x.video).map(nico_video_to_PlatformVideo)
+        this.next_page = this.next_page + 1
 
-    // Get user from embedded HTML
-    const regex_thing = /data-common-header="(.*?)"/.exec(playlistHttpRes.body)
-    if (regex_thing === null) {
-        throw new ScriptException("regex error")
+        return this
     }
-    const encodedPageData = regex_thing[1]
-    if (encodedPageData === undefined) {
-        throw new ScriptException("regex error")
+    override hasMorePagers(this: WatchLaterVideoPager): boolean {
+        return this.hasMore
     }
-    const pageData: PlaylistPageDataResponse = JSON.parse(encodedPageData.replace(/&quot;/g, '"'))
-    const user = pageData.initConfig.user
+}
+class LoggedInPlaylistVideoPager extends VideoPager {
+    private next_page: number
+    constructor(initial_videos: Content[], has_more: boolean, private readonly playlist_id: string, private readonly page_size: number) {
+        super(initial_videos.map(nico_video_to_PlatformVideo), has_more)
 
-    log(platformVideos)
-    log(user)
+        this.next_page = 2
+    }
+    override nextPage(this: LoggedInPlaylistVideoPager): LoggedInPlaylistVideoPager {
+        const url = `https://nvapi.nicovideo.jp/v2/users/me/mylists/${this.playlist_id}?pageSize=${this.page_size}&page=${this.next_page}`
+        const response: PlaylistResponse = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, true).body)
 
-    throw new ScriptException("TODO")
+        this.results = response.data.mylist.items.map((item) => item.video).map(nico_video_to_PlatformVideo)
+        this.hasMore = response.data.mylist.totalItemCount > this.page_size * 1
 
-    /*
-    return new PlatformPlaylistDetails({
-        url: playlist_url,
-        id: new PlatformID(PLATFORM, playlistId, config.id, PLATFORM_CLAIMTYPE),
+        this.next_page = this.next_page + 1
+
+        return this
+    }
+    override hasMorePagers(this: LoggedInPlaylistVideoPager): boolean {
+        return this.hasMore
+    }
+}
+class PlaylistVideoPager extends VideoPager {
+    private next_page: number
+    constructor(initial_videos: Content[], has_more: boolean, private readonly playlist_id: string, private readonly page_size: number) {
+        super(initial_videos.map(nico_video_to_PlatformVideo), has_more)
+
+        this.next_page = 2
+    }
+    override nextPage(this: PlaylistVideoPager): PlaylistVideoPager {
+        const url = `https://nvapi.nicovideo.jp/v2/mylists/${this.playlist_id}?pageSize=${this.page_size}&page=${this.next_page}&sensitiveContents=mask`
+        const response: PlaylistResponse = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, false).body)
+
+        this.results = response.data.mylist.items.map((item) => item.video).map(nico_video_to_PlatformVideo)
+        this.hasMore = response.data.mylist.totalItemCount > this.page_size * 1
+
+        this.next_page = this.next_page + 1
+
+        return this
+    }
+    override hasMorePagers(this: PlaylistVideoPager): boolean {
+        return this.hasMore
+    }
+}
+class SeriesVideoPager extends VideoPager {
+    private next_page: number
+    constructor(initial_videos: Content[], has_more: boolean, private readonly playlist_id: string, private readonly page_size: number) {
+        super(initial_videos.map(nico_video_to_PlatformVideo), has_more)
+
+        this.next_page = 2
+    }
+    override nextPage(this: SeriesVideoPager): SeriesVideoPager {
+        const url = `https://nvapi.nicovideo.jp/v2/series/${this.playlist_id}?pageSize=${this.page_size}&page=${this.next_page}&sensitiveContents=mask`
+        const response: SeriesResponse = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, false).body)
+
+        this.results = response.data.items.map((item) => item.video).map(nico_video_to_PlatformVideo)
+        this.hasMore = response.data.totalCount > this.page_size * 1
+
+        this.next_page = this.next_page + 1
+
+        return this
+    }
+    override hasMorePagers(this: SeriesVideoPager): boolean {
+        return this.hasMore
+    }
+}
+function searchPlaylists(query: string): PlaylistPager {
+    // TODO ideally we are able to surface search results for playlists and series
+    log("Niconico log: showing results for playlists. there isn't a way to show results for series")
+    return new NiconicoPlaylistPager(query, 10, "mylist")
+}
+class NiconicoPlaylistPager extends PlaylistPager {
+    private next_page: number
+    private readonly url: URL
+    constructor(query: string, page_size: number, type: "mylist" | "series") {
+        const url = new URL(SEARCH_PLAYLISTS_URL)
+        url.searchParams.set("_frontendId", "6")
+        url.searchParams.set("keyword", query)
+        url.searchParams.set("sortKey", "_hotTotalScore")
+        url.searchParams.set("types", type)
+        url.searchParams.set("pageSize", page_size.toString())
+        url.searchParams.set("page", "1")
+
+        const search_response: PlaylistSearchResponse = JSON.parse(local_http.GET(url.toString(), {}, false).body)
+
+        super(search_response.data.items.map(format_playlist), search_response.data.hasNext)
+
+        this.next_page = 2
+        this.url = url
+    }
+    override nextPage(this: NiconicoPlaylistPager) {
+        this.url.searchParams.set("page", this.next_page.toString())
+        const search_response: PlaylistSearchResponse = JSON.parse(local_http.GET(this.url.toString(), {}, false).body)
+
+        this.results = search_response.data.items.map(format_playlist)
+
+        this.hasMore = search_response.data.hasNext
+
+        this.next_page = this.next_page + 1
+
+        return this
+    }
+    override hasMorePagers(this: NiconicoPlaylistPager): boolean {
+        return this.hasMore
+    }
+}
+function format_playlist(playlist: NiconicoList): PlatformPlaylist {
+    return new PlatformPlaylist({
+        id: new PlatformID(PLATFORM, playlist.id.toString(), plugin.config.id),
+        name: playlist.title,
+        thumbnails: new Thumbnails([new Thumbnail(playlist.thumbnailUrl, HARDCODED_THUMBNAIL_QUALITY)]),
         author: new PlatformAuthorLink(
-            new PlatformID(PLATFORM, String(user.id), config.id, PLATFORM_CLAIMTYPE),
-            user.nickname,
-            `https://www.nicovideo.jp/user/${user.id}`,
-            user.iconUrl,
+            new PlatformID(PLATFORM, playlist.owner.id, plugin.config.id),
+            playlist.owner.name,
+            `${USER_URL_PREFIX}${playlist.owner.id}`,
+            playlist.owner.iconUrl
         ),
-        name: nicoPlaylist.name,
-        thumbnail: null,
-        videoCount: platformVideos.length,
-        contents: new VideoPager(platformVideos, false),
+        url: `https://www.nicovideo.jp/user/${playlist.owner.id}/mylist/${playlist.id}`,
+        videoCount: playlist.videoCount,
+        thumbnail: playlist.thumbnailUrl,
     })
-    */
 }
 //#endregion
 
 //#region other
 function getUserPlaylists() {
-    if (!bridge.isLoggedIn()) {
-        throw new LoginRequiredException("Failed to retrieve playlists, not logged in")
-    }
-
     const res = local_http.GET(URL_PLAYLISTS, { "X-Frontend-Id": "6" }, true)
 
     if (!res.isOk) {
@@ -735,120 +1147,56 @@ function getUserPlaylists() {
     const user_playlists_response: UserPlaylistsResponse = JSON.parse(res.body)
 
     const playlistUrls = user_playlists_response.data.mylists.map(
-        (playlist) => `https://www.nicovideo.jp/my/mylist/${playlist.id}`,
+        (playlist) => `${LOGGED_IN_USER_LISTS_PREFIX}${playlist.id}`,
     )
 
-    return playlistUrls
+    return [...playlistUrls, "https://www.nicovideo.jp/my/watchlater"]
 }
 
 function getUserSubscriptions() {
-    if (!bridge.isLoggedIn()) {
-        throw new LoginRequiredException("Failed to retrieve subscriptions, not logged in")
-    }
+    const url = new URL(URL_FOLLOWING)
+    url.searchParams.set("pageSize", "100")
 
-    const res = local_http.GET(
-        URL_FOLLOWING,
-        {
-            "X-Frontend-Id": "6",
-        },
-        true,
-    )
+    const res = local_http.GET(url.toString(), { "X-Frontend-Id": "6", }, true)
 
     if (!res.isOk) {
-        throw new ScriptException(`Failed request [${URL_FOLLOWING}] (${res.code})`)
+        throw new ScriptException(`Failed request [${url.toString()}] (${res.code})`)
     }
 
     const user_subscriptions_response: UserSubscriptionsResponse = JSON.parse(res.body)
 
-    const followingUrls = user_subscriptions_response.data.items.map((x) => {
-        return `https://www.nicovideo.jp/user/${x.id}`
+    const subscriptions = user_subscriptions_response.data.items.map((x) => {
+        return `${USER_URL_PREFIX}${x.id}`
     })
 
-    return followingUrls
+    let cursor = user_subscriptions_response.data.summary.cursor
+    let has_more = user_subscriptions_response.data.summary.hasNext
+
+
+    while (has_more) {
+        url.searchParams.set("cursor", cursor)
+
+        const res = local_http.GET(url.toString(), { "X-Frontend-Id": "6", }, true)
+
+        if (!res.isOk) {
+            throw new ScriptException(`Failed request [${url.toString()}] (${res.code})`)
+        }
+
+        const user_subscriptions_response: UserSubscriptionsResponse = JSON.parse(res.body)
+
+        subscriptions.push(...user_subscriptions_response.data.items.map((x) => {
+            return `${USER_URL_PREFIX}${x.id}`
+        }))
+
+        cursor = user_subscriptions_response.data.summary.cursor
+        has_more = user_subscriptions_response.data.summary.hasNext
+    }
+
+    return subscriptions
 }
 //#endregion
 
 //#region parsing
-function nicoVideoDetailsToPlatformVideoDetails(videoXML: string, hlsEndpoint: string) {
-    // Helper function
-    const queryVideoXML = (tag: "video_id" | "thumbnail_url" | "watch_url" | "user_id" | "length" | "mylist_counter" | "title" | "first_retrieve" | "user_nickname" | "user_icon_url" | "description") => querySelectorXML(videoXML, tag)
-
-    const videoId = queryVideoXML("video_id")
-    const thumbnailUrl = queryVideoXML("thumbnail_url")
-    const duration = hhmmssToDuration(queryVideoXML("length"))
-    const videoUrl = queryVideoXML("watch_url")
-    const authorId = queryVideoXML("user_id")
-
-    // Closest thing to likes
-    const mylistBookmarks = Number(queryVideoXML("mylist_counter"))
-
-    log("creating HLS source")
-
-    // Create HLS endpoint
-    const hlsSource = new HLSSource({
-        name: "Original",
-        url: hlsEndpoint,
-        duration,
-    })
-
-    log("adding requestModifier")
-
-    // Domand videos require a domand_bid cookie for the request to work
-    // const httpClientId = local_http.getDefaultClient(false).clientId
-    // if (hlsEndpoint.includes("delivery.domand.nicovideo.jp") && httpClientId) {
-    //     hlsSource.requestModifier = { options: { applyCookieClient: httpClientId } }
-    // } else {
-    //     throw new ScriptException(`Unhandled hlsEndpoint: ${hlsEndpoint}`)
-    // }
-
-    log("creating PlatformVideoDetails")
-
-    return new PlatformVideoDetails({
-        id: new PlatformID(PLATFORM, videoId, plugin.config.id),
-        name: queryVideoXML("title"),
-        thumbnails: new Thumbnails([new Thumbnail(thumbnailUrl, 0)]),
-        duration,
-        viewCount: 0,//Number(queryVideoXML("view_counter")),
-        url: videoUrl,
-        isLive: false,
-        datetime: date_to_unix_seconds(queryVideoXML("first_retrieve")),
-        shareUrl: videoUrl,
-        author: new PlatformAuthorLink(
-            new PlatformID(PLATFORM, authorId, plugin.config.id),
-            queryVideoXML("user_nickname"),
-            `https://www.nicovideo.jp/user/${authorId}`,
-            queryVideoXML("user_icon_url"),
-        ),
-        description: unescapeHtmlEntities(queryVideoXML("description")),
-        rating: new RatingLikes(mylistBookmarks),
-        subtitles: [],
-        video: new VideoSourceDescriptor([hlsSource]),
-    })
-}
-
-// function nico_search_video_to_PlatformVideo(v: SearchContent) {
-//     const video_url = `https://www.nicovideo.jp/watch/${v.contentId}`
-//     const author_id = String(v.userId)
-
-//     return new PlatformVideo({
-//         id: new PlatformID(PLATFORM, v.contentId, plugin.config.id),
-//         name: v.title,
-//         thumbnails: new Thumbnails([new Thumbnail(v.thumbnailUrl, 0)]),
-//         duration: v.lengthSeconds,
-//         viewCount: v.viewCounter,
-//         url: video_url,
-//         isLive: false,
-//         datetime: date_to_unix_seconds(v.startTime),
-//         shareUrl: video_url,
-//         author: new PlatformAuthorLink(
-//             new PlatformID(PLATFORM, author_id, plugin.config.id),
-//             "ニコニコ",
-//             `https://www.nicovideo.jp/user/${author_id}`,
-//             "https://play-lh.googleusercontent.com/_C1KxgGIw43g2Y2G8salrswvYqkkBum5896cCrFOWkgdAxZI10efI-oQxfWRfLOBysE",
-//         ),
-//     })
-// }
-
 function nico_video_to_PlatformVideo(v: Content) {
     const video_url = `${VIDEO_URL_PREFIX}${v.id}`
     const thumbnail_url = v.thumbnail.listingUrl
@@ -872,80 +1220,16 @@ function nico_video_to_PlatformVideo(v: Content) {
     })
 }
 
-function getUserDataFromHTML(html: string) {
-    const regex_thing = /data-initial-data="(.*?)"/.exec(html)
-    if (regex_thing === null) {
-        throw new ScriptException("regex error")
+function get_data_from_html(html: string) {
+    const json = local_dom_parser.parseFromString(html).getElementById("js-initial-userpage-data")?.getAttribute("data-initial-data")
+    if (json === undefined) {
+        throw new ScriptException("missing data")
     }
-    const encodedPageData = regex_thing[1]
-    if (encodedPageData === undefined) {
-        throw new ScriptException("regex error")
-    }
-    const userPageData: UserPageDataResponse = JSON.parse(encodedPageData.replace(/&quot;/g, '"'))
-    const userObj = userPageData.state.userDetails.userDetails.user
-    return userObj
-}
+    const data: UserResponse = JSON.parse(json)
 
-function getCSRFTokensFromVideoDetailHTML(html: string) {
-    const regex_thing = /data-api-data="(.*?)"/.exec(html)
-    if (regex_thing === null) {
-        throw new ScriptException("regex error")
-    }
-    const encodedPageData = regex_thing[1]
-    if (encodedPageData === undefined) {
-        throw new ScriptException("regex error")
-    }
-    const pageData: VideoPageDataResponse = JSON.parse(encodedPageData.replace(/&quot;/g, '"'))
+    const user = data.state.userDetails.userDetails.user
 
-    // For getting actionTrackId and X-Access-Right-Key from the DOM, required for HLS requests
-    const actionTrackId = pageData.client.watchTrackId
-    const accessRightKey = pageData.media.domand.accessRightKey
-
-    if (!actionTrackId || !accessRightKey) {
-        throw new ScriptException(`Unable to play video, could not get CSRF tokens.`)
-    }
-
-    return { actionTrackId, accessRightKey }
-}
-
-function fetchHLSEndpoint(videoId: unknown, actionTrackId: string, accessRightKey: string) {
-    const url = `https://nvapi.nicovideo.jp/v1/watch/${videoId}/access-rights/hls?actionTrackId=${actionTrackId}`
-
-    // This gives us the video/audio configurations we are allowed to request
-    const jwt = parseJWT(accessRightKey)
-    const videoOptions = jwt.v
-    const audioOptions = jwt.a
-
-    const res = local_http.POST(
-        url,
-        JSON.stringify({
-            outputs: videoOptions.map((option) => [option, audioOptions[0]]),
-        }),
-        {
-            "X-Access-Right-Key": accessRightKey,
-            "X-Frontend-Id": "6",
-            "X-Frontend-Version": "0",
-            "X-Request-With": "https://www.nicovideo.jp",
-            "Content-Type": "application/x-www-form-urlencoded",
-            Accept: "*/*",
-        },
-        false
-    )
-
-    if (!res.isOk) {
-        throw new ScriptException(`Failed request [${url}] (${res.code})`)
-    }
-
-    const hls_response: HLSResponse = JSON.parse(res.body)
-
-    const hlsEndpoint = hls_response.data.contentUrl
-
-    // Every part of the request was validated, not sure why we're getting a 400
-    if (!hlsEndpoint) {
-        throw new ScriptException(`Failed request [${url}] (${res.code})`)
-    }
-
-    return hlsEndpoint
+    return user
 }
 //#endregion
 
@@ -961,63 +1245,6 @@ function date_to_unix_seconds(date: string) {
     }
 
     return Math.round(Date.parse(date) / 1000)
-}
-
-/**
- * Gets the video id from an URL
- * @param url The URL
- * @returns The video id
- */
-function getVideoIdFromUrl(url: string) {
-    if (!url) {
-        return null
-    }
-
-    const match = NICO_VIDEO_URL_REGEX.exec(url)
-    return match ? match[1] : null
-}
-
-/**
- * Gets the user id from an URL
- * @param url The URL
- * @returns The user id
- */
-function getUserIdFromURL(url: string) {
-    if (!url) {
-        return null
-    }
-
-    const match = NICO_CHANNEL_URL_REGEX.exec(url)
-    return match ? match[1] : null
-}
-
-/**
- * Gets the playlist id from an URL
- * @param url The URL
- * @returns The playlist id
- */
-function getPlaylistIdFromURL(url: string) {
-    if (!url) {
-        return null
-    }
-
-    const match = NICO_PLAYLIST_URL_REGEX.exec(url)
-    return match ? match[1] : null
-}
-
-/**
- * Unescape common HTML entities without using DOMParser
- * @param htmlString
- * @returns Unescaped string
- */
-function unescapeHtmlEntities(htmlString: string) {
-    return htmlString
-        .replace(/&amp;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .replace(/&nbsp;/g, " ")
 }
 
 /**
@@ -1048,71 +1275,6 @@ function hhmmssToDuration(durationStr: string): number {
     }
 
     throw new ScriptException("invalid string")
-}
-
-/**
- * Get text inside an XML tag
- * @param xml XML document string
- * @param tag XML tag to search for
- * @returns Text inside XML tag
- */
-function querySelectorXML(xml: string, tag: string) {
-    const xmlRegex = new RegExp(`<${tag}>(.*?)</${tag}>`, "g")
-    const innerText = xmlRegex.exec(xml)
-    if (innerText === null) {
-        throw new ScriptException("missing text")
-    }
-    const text = innerText[1]
-    if (text === undefined) {
-        throw new ScriptException("missing text")
-    }
-    return text
-}
-
-/**
- * Parse Base64 encoded JWT
- * @param jwt Base64 encoded JWT
- * @returns Decoded JWT JSON
- */
-function parseJWT(jwt: string): { readonly v: unknown[], readonly a: unknown[] } {
-    const temp = jwt.split(".")[1]
-    if (temp === undefined) {
-        throw new ScriptException("bad jwt")
-    }
-    return JSON.parse(base64ToAscii(temp))
-}
-
-/**
- * Base64 to ASCII (from ChatGPT)
- * @param base64String Base64 encoded string
- * @returns ASCII string
- */
-function base64ToAscii(base64String: string) {
-    const base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
-
-    let decoded = ""
-    let buffer = 0
-    let bufferLength = 0
-
-    for (let i = 0; i < base64String.length; i++) {
-        const charIndex = base64Chars.indexOf(base64String.charAt(i))
-
-        if (charIndex === -1) {
-            // Skip invalid characters
-            continue
-        }
-
-        buffer = (buffer << 6) | charIndex
-        bufferLength += 6
-
-        if (bufferLength >= 8) {
-            bufferLength -= 8
-            const charCode = (buffer >> bufferLength) & 0xff
-            decoded += String.fromCharCode(charCode)
-        }
-    }
-
-    return decoded
 }
 
 /**

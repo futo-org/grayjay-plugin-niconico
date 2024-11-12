@@ -24,9 +24,9 @@
         "@types/eslint__js": "^8.42.3",
         "eslint": "^9.14.0",
         "typescript": "^5.6.3",
-        "typescript-eslint": "^8.13.0",
-        "@kaidelorenzo/grayjay-polyfill": "gitlab:kaidelorenzo/grayjay-polyfill#c9bcb02f02c672cb6f77b9d719b947a2775f69a4",
-        "@types/grayjay-source": "gitlab:kaidelorenzo/grayjay-plugin-types#f1ff4c9dd75bf66979984e4a8a4b9cb78dff07ff"
+        "typescript-eslint": "^8.14.0",
+        "@kaidelorenzo/grayjay-polyfill": "gitlab:kaidelorenzo/grayjay-polyfill#9a48957ba321192416e820002aab528104567654",
+        "@types/grayjay-source": "gitlab:kaidelorenzo/grayjay-plugin-types#8b45c655f977480a67a3fdc553a6b636503a1651"
     },
     "scripts": {
         "test": "node --test",
