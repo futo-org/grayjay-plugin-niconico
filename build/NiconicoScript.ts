@@ -39,7 +39,7 @@ const LIVE_URL_PREFIX = "https://live.nicovideo.jp/watch/" as const
 const LOGGED_IN_USER_LISTS_PREFIX = "https://www.nicovideo.jp/my/mylist/" as const
 const SEARCH_PLAYLISTS_URL = "https://nvapi.nicovideo.jp/v1/search/list" as const
 
-const NICO_VIDEO_URL_REGEX = /^https:\/\/(live|www)\.nicovideo\.jp\/watch\/(lv[0-9]{9}|sm[0-9]*?)$/
+const NICO_VIDEO_URL_REGEX = /^https:\/\/(live|www)\.nicovideo\.jp\/watch\/(lv[0-9]{9}|sm[0-9]*?|so[0-9]{8}|)$/
 const NICO_CHANNEL_URL_REGEX = /^https:\/\/www\.nicovideo\.jp\/user\/([0-9]*?)$/
 const LOGGED_IN_USER_LISTS_REGEX = /^https:\/\/www\.nicovideo\.jp\/my\/(watchlater|mylist\/([0-9]{8}))$/
 const PLAYLIST_URL_REGEX = /^https:\/\/www\.nicovideo\.jp\/user\/([0-9]*?)\/(series|mylist)\/([0-9]*?)$/
@@ -373,6 +373,10 @@ function getContentDetails(video_url: string) {
                 throw new ScriptException("missing server response data")
             }
             const video_response: VideoResponse = JSON.parse(data)
+
+            if(video_response.data.response.errorCode === "FORBIDDEN") {
+                throw new UnavailableException("This content is region locked")
+            }
 
             const audio_id = video_response.data.response.media.domand.audios[0]?.id
             if (audio_id === undefined) {

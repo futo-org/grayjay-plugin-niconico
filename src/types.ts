@@ -40,10 +40,17 @@ export type ThreadsResponse = {
 }
 export type VideoResponse = {
     readonly data: {
+        readonly response: {
+            readonly errorCode: "FORBIDDEN"
+        }
+    }
+} | {
+    readonly data: {
         readonly metadata: {
             readonly jsonLds: unknown
         }
         readonly response: {
+            readonly errorCode: undefined
             readonly comment: {
                 readonly nvComment: {
                     readonly server: string
