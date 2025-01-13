@@ -25,7 +25,8 @@ import type {
     NiconicoChannelSeries,
     SeriesResponse,
     WatchLaterResponse,
-    SearchVideosResponse
+    SearchVideosResponse,
+    State
 } from "./types"
 
 const PLATFORM = "Niconico" as const
@@ -59,6 +60,8 @@ Type.Order.Favorites = "Most favorited"
 
 const local_dom_parser = domParser
 const local_http = http
+/** State */
+let local_state: State
 //#endregion
 
 //#region source methods
@@ -108,6 +111,19 @@ function enable(conf: SourceConfig, settings: Settings, saved_state?: string | n
         log(settings)
         log("logging savedState")
         log(saved_state)
+    }
+    if (saved_state !== null && saved_state !== undefined) {
+        const state: State = JSON.parse(saved_state)
+        local_state = state
+    } else {
+        const client_id = local_http.getDefaultClient(false).clientId
+        if(client_id === undefined){
+            throw new ScriptException("missing http client id")
+        }
+
+        local_state = {
+            client_id
+        }
     }
 }
 //#endregion
@@ -443,11 +459,6 @@ function getContentDetails(video_url: string) {
 
             const video = video_response.data.response.video
 
-            const client_id = local_http.getDefaultClient(false).clientId
-            if(client_id === undefined){
-                throw new ScriptException("missing http client id")
-            }
-
             return new PlatformVideoDetails({
                 id: new PlatformID(PLATFORM, video_id, plugin.config.id),
                 name: video.title,
@@ -471,7 +482,7 @@ function getContentDetails(video_url: string) {
                     url: hls.data.contentUrl,
                     requestModifier: {
                         options: {
-                            applyCookieClient: client_id
+                            applyCookieClient: local_state.client_id
                         }
                     }
                 })]),

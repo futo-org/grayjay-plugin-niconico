@@ -1,5 +1,8 @@
 //#region custom types
 export type Settings = unknown
+export type State = {
+    readonly client_id: string
+}
 
 export type NiconicoSource = Required<Omit<Source<
     never,
