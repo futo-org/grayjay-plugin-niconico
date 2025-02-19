@@ -1,28 +1,28 @@
 import { createServer } from "node:http"
-import { networkInterfaces } from 'os'
+import { networkInterfaces } from "node:os"
 import { readFile } from "node:fs/promises"
 
 const PORT = 8080
 
 // Define a map of files to serve
 const files = {
-    "/build/NiconicoScript.js": {
+    "/src/NiconicoScript.js": {
         content: await readFile("build/NiconicoScript.js"),
         type: "application/javascript",
     },
-    "/build/NiconicoScript.ts": {
+    "/src/NiconicoScript.ts": {
         content: await readFile("build/NiconicoScript.ts"),
         type: "application/x-typescript",
     },
-    "/build/NiconicoScript.js.map": {
+    "/src/NiconicoScript.js.map": {
         content: await readFile("build/NiconicoScript.js.map"),
         type: "application/json",
     },
-    "/build/NiconicoConfig.json": {
+    "/src/NiconicoConfig.json": {
         content: await readFile("build/NiconicoConfig.json"),
         type: "application/json",
     },
-    "/build/NiconicoIcon.png": {
+    "/src/NiconicoIcon.png": {
         content: await readFile("build/NiconicoIcon.png"),
         type: "image/png",
     },
@@ -50,15 +50,15 @@ function getLocalIPAddress(): string {
 createServer((req, res) => {
     const file = (() => {
         switch (req.url) {
-            case "/build/NiconicoScript.js":
+            case "/src/NiconicoScript.js":
                 return files[req.url]
-            case "/build/NiconicoScript.ts":
+            case "/src/NiconicoScript.ts":
                 return files[req.url]
-            case "/build/NiconicoScript.js.map":
+            case "/src/NiconicoScript.js.map":
                 return files[req.url]
-            case "/build/NiconicoConfig.json":
+            case "/src/NiconicoConfig.json":
                 return files[req.url]
-            case "/build/NiconicoIcon.png":
+            case "/src/NiconicoIcon.png":
                 return files[req.url]
             default:
                 return undefined
@@ -75,5 +75,5 @@ createServer((req, res) => {
     res.end("File not found")
     return
 }).listen(PORT, () => {
-    console.log(`Server running at http://${getLocalIPAddress()}:${PORT}/build/NiconicoConfig.json`)
+    console.log(`Server running at http://${getLocalIPAddress()}:${PORT}/src/NiconicoConfig.json`)
 })

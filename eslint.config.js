@@ -1,6 +1,10 @@
-import eslint from "@eslint/js";
-import tseslint from "typescript-eslint";
-export default tseslint.config(eslint.configs.recommended, ...tseslint.configs.strict, {
-    ignores: ["**/*.js"]
-});
-//# sourceMappingURL=eslint.config.js.map
+import eslint from "@eslint/js"
+import tseslint from "typescript-eslint"
+
+export default tseslint.config(
+    eslint.configs.recommended,
+    ...tseslint.configs.strict,
+    {
+        ignores: ["_dist", "build"]
+    }
+)

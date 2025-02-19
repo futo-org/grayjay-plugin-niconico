@@ -1,5 +1,5 @@
 import { createReadStream, createWriteStream } from "node:fs"
-import { copyFile, rename, } from "node:fs/promises"
+import { copyFile, rename, cp } from "node:fs/promises"
 import * as readline from "node:readline"
 import { EOL } from "node:os"
 import { execFileSync } from "node:child_process"
@@ -21,7 +21,7 @@ async function modifyFile(filePath: string, offset: number) {
         lines.push(line)
     }
 
-    rl.close();
+    rl.close()
     readStream.close()
 
     if (lines[lines.length - (1 + offset)]?.slice(0, 6) === "export") {
@@ -38,19 +38,23 @@ async function modifyFile(filePath: string, offset: number) {
     writeStream.on('finish', async () => {
         // Rename the temporary file to overwrite the original file
         await rename(tempFilePath, filePath)
-    });
+    })
 
     writeStream.on('error', (error) => {
         console.error('Error writing to file:', error)
     })
 }
-
-await copyFile("src/NiconicoScript.ts", "build/NiconicoScript.ts")
-await copyFile("src/types.ts", "build/types.ts")
+const copy_promise0 = cp("src", "_dist/src/", { recursive: true, force: true })
+const copy_promise1 = cp("tests", "_dist/tests/", { recursive: true, force: true })
+await Promise.all([copy_promise0, copy_promise1])
 if (argv[2] !== undefined) {
-    execFileSync("tsc", ["--mapRoot", argv[2], "--sourceRoot", argv[2]], { stdio: 'inherit' })
+    execFileSync("tsc", ["--mapRoot", argv[2], "--sourceRoot", argv[2]], { shell: true, encoding: 'utf-8', stdio: 'inherit' })
 } else {
-    execFileSync("tsc", { stdio: 'inherit' })
+    execFileSync("tsc", { shell: true, encoding: 'utf-8', stdio: 'inherit' })
 }
+const promise1 = copyFile("_dist/src/NiconicoScript.ts", "build/NiconicoScript.ts")
+const promise2 = copyFile("_dist/src/NiconicoScript.js", "build/NiconicoScript.js")
+const promise3 = copyFile("_dist/src/NiconicoScript.js.map", "build/NiconicoScript.js.map")
+await Promise.all([promise1, promise2, promise3])
 modifyFile("build/NiconicoScript.ts", 0)
 modifyFile("build/NiconicoScript.js", 1)

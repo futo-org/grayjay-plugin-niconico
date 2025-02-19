@@ -1,4 +1,5 @@
 {
+    "$schema" : "https://github.com/MithrilGoat/GrayJay-Plugin-Schema/releases/latest/download/Schema.json",
     "name": "Niconico",
     "description": "Niconico is the biggest video platform in Japan",
     "author": "FUTO",
