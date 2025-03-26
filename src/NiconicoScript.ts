@@ -69,6 +69,7 @@ const local_source: NiconicoSource = {
     enable,
     disable,
     getHome,
+    getShorts: getHome,
     getContentRecommendations,
     searchSuggestions,
     search,

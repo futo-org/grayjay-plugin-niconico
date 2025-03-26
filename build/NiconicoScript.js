@@ -31,6 +31,7 @@ const local_source = {
     enable,
     disable,
     getHome,
+    getShorts: getHome,
     getContentRecommendations,
     searchSuggestions,
     search,
