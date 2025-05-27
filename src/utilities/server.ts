@@ -31,18 +31,16 @@ const files = {
 function getLocalIPAddress(): string {
     const br = networkInterfaces()
     const network_devices = Object.values(br)
-    if (network_devices !== undefined) {
-        for (const network_interface of network_devices) {
-            if (network_interface === undefined) {
-                continue
-            }
-            for (const { address, family } of network_interface) {
-                if (family === "IPv4" && address !== "127.0.0.1") {
-                    return address
-                }
-            }
-
+    for (const network_interface of network_devices) {
+        if (network_interface === undefined) {
+            continue
         }
+        for (const { address, family } of network_interface) {
+            if (family === "IPv4" && address !== "127.0.0.1") {
+                return address
+            }
+        }
+
     }
     throw new Error("panic")
 }
@@ -75,5 +73,5 @@ createServer((req, res) => {
     res.end("File not found")
     return
 }).listen(PORT, () => {
-    console.log(`Server running at http://${getLocalIPAddress()}:${PORT}/src/NiconicoConfig.json`)
+    console.log(`Server running at http://${getLocalIPAddress()}:${PORT.toString()}/src/NiconicoConfig.json`)
 })

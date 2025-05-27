@@ -23,7 +23,7 @@ export type NiconicoSource = Required<Omit<Source<
 >>
 
 export type ChannelTypeCapabilities = typeof Type.Feed.Videos
-export type SearchTypes = typeof Type.Feed.Videos | typeof Type.Feed.Live
+export type SearchTypes = typeof Type.Feed.Videos | typeof Type.Feed.Mixed
 export type FilterGroupIDs = "ADDITIONAL_CONTENT"
 //#endregion
 
@@ -241,18 +241,19 @@ export type SeriesResponse = {
 export type UserPlaylistsResponse = {
     readonly data: {
         readonly mylists: {
-            readonly id: unknown
+            readonly id: string
         }[]
     }
 }
 export type UserSubscriptionsResponse = {
     readonly data: {
         readonly items: {
-            readonly id: unknown
+            readonly id: string
         }[]
         readonly summary: {
             readonly hasNext: boolean
-            readonly cursor: "cursorEnd" | string
+            /** "cursorEnd" when there is no next */
+            readonly cursor: string
         }
     }
 }

@@ -29,16 +29,16 @@ import type {
     State
 } from "./types"
 
-const PLATFORM = "Niconico" as const
+const PLATFORM = "Niconico"
 
-const URL_RECOMMENDED_FEED = "https://nvapi.nicovideo.jp/v1/recommend?recipeId=video_recommendation_recommend&sensitiveContents=mask&site=nicovideo&_frontendId=6&_frontendVersion=0" as const
-const URL_FOLLOWING = "https://nvapi.nicovideo.jp/v1/users/me/following/users" as const
-const URL_PLAYLISTS = "https://nvapi.nicovideo.jp/v1/users/me/mylists" as const
-const USER_URL_PREFIX = "https://www.nicovideo.jp/user/" as const
-const VIDEO_URL_PREFIX = "https://www.nicovideo.jp/watch/" as const
-const LIVE_URL_PREFIX = "https://live.nicovideo.jp/watch/" as const
-const LOGGED_IN_USER_LISTS_PREFIX = "https://www.nicovideo.jp/my/mylist/" as const
-const SEARCH_PLAYLISTS_URL = "https://nvapi.nicovideo.jp/v1/search/list" as const
+const URL_RECOMMENDED_FEED = "https://nvapi.nicovideo.jp/v1/recommend?recipeId=video_recommendation_recommend&sensitiveContents=mask&site=nicovideo&_frontendId=6&_frontendVersion=0"
+const URL_FOLLOWING = "https://nvapi.nicovideo.jp/v1/users/me/following/users"
+const URL_PLAYLISTS = "https://nvapi.nicovideo.jp/v1/users/me/mylists"
+const USER_URL_PREFIX = "https://www.nicovideo.jp/user/"
+const VIDEO_URL_PREFIX = "https://www.nicovideo.jp/watch/"
+const LIVE_URL_PREFIX = "https://live.nicovideo.jp/watch/"
+const LOGGED_IN_USER_LISTS_PREFIX = "https://www.nicovideo.jp/my/mylist/"
+const SEARCH_PLAYLISTS_URL = "https://nvapi.nicovideo.jp/v1/search/list"
 
 const NICO_VIDEO_URL_REGEX = /^https:\/\/(live|www)\.nicovideo\.jp\/watch\/(lv[0-9]{9}|sm[0-9]*?|so[0-9]{8}|)$/
 const NICO_CHANNEL_URL_REGEX = /^https:\/\/www\.nicovideo\.jp\/user\/([0-9]*?)$/
@@ -48,7 +48,7 @@ const PLAYLIST_URL_REGEX = /^https:\/\/www\.nicovideo\.jp\/user\/([0-9]*?)\/(ser
 // determines what subtitles are available and likely other things
 const ACCEPT_LANGUAGE = "en-US,en;q=0.7,es;q=0.3"
 
-const HARDCODED_THUMBNAIL_QUALITY = 1080 as const
+const HARDCODED_THUMBNAIL_QUALITY = 1080
 const MISSING_AUTHOR = "Missing Creator"
 const DEFAULT_AUTHOR = 1
 const DEFAULT_AUTHOR_THUMB = "https://secure-dcdn.cdn.nimg.jp/nicoaccount/usericon/0/1.jpg?1671282761"
@@ -89,7 +89,7 @@ const local_source: NiconicoSource = {
 }
 init_source(local_source)
 function init_source<
-    T extends { readonly [key: string]: string },
+    T extends Readonly<Record<string, string>>,
     S extends string,
     ChannelTypes extends FeedType,
     SearchTypes extends FeedType,
@@ -97,6 +97,7 @@ function init_source<
 >(local_source: Source<T, S, ChannelTypes, SearchTypes, ChannelSearchTypes, unknown>) {
     for (const method_key of Object.keys(local_source)) {
         // @ts-expect-error assign to readonly constant source object
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         source[method_key] = local_source[method_key]
     }
 }
@@ -114,11 +115,12 @@ function enable(conf: SourceConfig, settings: Settings, saved_state?: string | n
         log(saved_state)
     }
     if (saved_state !== null && saved_state !== undefined) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const state: State = JSON.parse(saved_state)
         local_state = state
     } else {
         const client_id = local_http.getDefaultClient(false).clientId
-        if(client_id === undefined){
+        if (client_id === undefined) {
             throw new ScriptException("missing http client id")
         }
 
@@ -137,8 +139,9 @@ function disable() {
 function getHome() {
     const response = local_http.GET(URL_RECOMMENDED_FEED, {}, bridge.isLoggedIn())
     if (response.code !== 200) {
-        throw new ScriptException(`Failed request [${URL_RECOMMENDED_FEED}] (${response.code})`)
+        throw new ScriptException(`Failed request [${URL_RECOMMENDED_FEED}] (${response.code.toString()})`)
     }
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const feed_response: FeedResponse = JSON.parse(response.body)
 
     const platform_videos = feed_response.data.items.flatMap((x) => {
@@ -162,59 +165,33 @@ function searchSuggestions(query: string) {
     const res = local_http.GET(url, {}, false)
 
     if (!res.isOk) {
-        throw new ScriptException(`Failed request [${url}] (${res.code})`)
+        throw new ScriptException(`Failed request [${url}] (${res.code.toString()})`)
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const response: SearchSuggestionsResponse = JSON.parse(res.body)
 
     return response.candidates
 }
 function getSearchCapabilities() {
     return new ResultCapabilities<FilterGroupIDs, SearchTypes>(
-        [Type.Feed.Videos, Type.Feed.Live],
+        [Type.Feed.Videos, Type.Feed.Mixed],
         [Type.Order.Chronological, Type.Order.Favorites, Type.Order.Views],
-        [new FilterGroup(
-            "Additional Content",
-            [
-                new FilterCapability("Live", "LIVE", "Live"),
-                new FilterCapability("Videos", "VIDEOS", "Videos")
-            ],
-            false,
-            "ADDITIONAL_CONTENT"
-        )]
+        []
     )
 }
-function search(query: string, type: SearchTypes | null, order: Order | null, filters: FilterQuery<FilterGroupIDs> | null) {
-    if (filters === null) {
+function search(query: string, _type: SearchTypes | null, order: Order | null, filters: FilterQuery<FilterGroupIDs> | null) {
+    if (filters === null || Object.keys(filters).length !== 0) {
         throw new ScriptException("unreachable")
     }
     if (order === "CHRONOLOGICAL" || order === null) {
         order = Type.Order.Chronological
     }
-    if (type === null) {
-        type = (() => {
-            switch (filters["ADDITIONAL_CONTENT"]?.[0]) {
-                case "VIDEOS":
-                    return Type.Feed.Videos
-                case "LIVE":
-                    return Type.Feed.Live
-                case undefined:
-                    log("Niconico log: search type is null defaulting to Videos")
-                    return Type.Feed.Videos
-                default:
-                    throw new ScriptException("unreachable")
-            }
-        })()
-    }
-
-    switch (type) {
-        case Type.Feed.Live:
-            return new SearchLivePager(query, order)
-        case Type.Feed.Videos:
-            return new SearchVideoPager(query, order, 10)
-        default:
-            throw assert_exhaustive(type, "unreachable")
-    }
+    // lives videos are not playable so don't include them
+    // case Type.Feed.Live:
+    //     return new SearchLivePager(query, order)
+    console.log(SearchLivePager)
+    return new SearchVideoPager(query, order, 10)
 }
 class SearchVideoPager extends VideoPager {
     private readonly url: URL
@@ -244,6 +221,7 @@ class SearchVideoPager extends VideoPager {
         url.searchParams.set("page", "1")
         url.searchParams.set("pageSize", page_size.toString())
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const videos_response: SearchVideosResponse = JSON.parse(local_http.GET(
             url.toString(),
             { "X-Frontend-Id": "6", },
@@ -260,6 +238,7 @@ class SearchVideoPager extends VideoPager {
     override nextPage(this: SearchVideoPager) {
         this.url.searchParams.set("page", this.next_page.toString())
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const videos_response: SearchVideosResponse = JSON.parse(local_http.GET(
             this.url.toString(),
             { "X-Frontend-Id": "6", },
@@ -302,7 +281,7 @@ class SearchLivePager extends VideoPager {
         const res = local_http.GET(url.toString(), {}, false)
 
         if (!res.isOk) {
-            throw new ScriptException(`Failed request [${url.toString()}] (${res.code})`)
+            throw new ScriptException(`Failed request [${url.toString()}] (${res.code.toString()})`)
         }
 
         // using the DOM parser because the data is stored in an element attribute with annoying &quot;
@@ -311,6 +290,7 @@ class SearchLivePager extends VideoPager {
             throw new ScriptException("missing data")
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const obj: SearchLiveVideosResponse = JSON.parse(data)
 
         const platform_videos = obj.searchResult.programs.onair.map(format_live_search_results)
@@ -325,7 +305,7 @@ class SearchLivePager extends VideoPager {
         const res = local_http.GET(this.url.toString(), {}, false)
 
         if (!res.isOk) {
-            throw new ScriptException(`Failed request [${this.url.toString()}] (${res.code})`)
+            throw new ScriptException(`Failed request [${this.url.toString()}] (${res.code.toString()})`)
         }
 
         // using the DOM parser because the data is stored in an element attribute with annoying &quot;
@@ -334,6 +314,7 @@ class SearchLivePager extends VideoPager {
             throw new ScriptException("missing data")
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const obj: SearchLiveVideosResponse = JSON.parse(data)
 
         const platform_videos = obj.searchResult.programs.onair.map(format_live_search_results)
@@ -374,7 +355,7 @@ function format_live_search_results(live_broadcast: OnAirData): PlatformVideo {
 //#region content
 function getContentDetails(video_url: string) {
     const match_result = video_url.match(NICO_VIDEO_URL_REGEX)
-    if (match_result === null || match_result[1] === undefined || match_result[2] === undefined) {
+    if (match_result?.[1] === undefined || match_result[2] === undefined) {
         throw new ScriptException("regex error")
     }
     const video_type = match_result[1]
@@ -389,13 +370,14 @@ function getContentDetails(video_url: string) {
             if (data === undefined) {
                 throw new ScriptException("missing server response data")
             }
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const video_response: VideoResponse = JSON.parse(data)
 
-            if(video_response.data.response.errorCode === "FORBIDDEN") {
+            if (video_response.data.response.errorCode === "FORBIDDEN") {
                 throw new UnavailableException("This content is region locked")
             }
 
-            const audio_id = video_response.data.response.media.domand.audios[0]?.id
+            const audio_id = video_response.data.response.media.domand.audios.find(audio => audio.isAvailable)?.id
             if (audio_id === undefined) {
                 throw new ScriptException("missing audio track")
             }
@@ -432,9 +414,11 @@ function getContentDetails(video_url: string) {
                 throw new ScriptException("unreachable")
             }
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const hls: { readonly data: { readonly contentUrl: string } } = JSON.parse(response.body)
 
 
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const thread_response: ThreadsResponse = JSON.parse(raw_thread_response.body)
             const subtitles = thread_response.data.threads[0]?.comments.filter((comment) => comment.commands.includes("shita"))
 
@@ -466,7 +450,7 @@ function getContentDetails(video_url: string) {
                 author: new PlatformAuthorLink(
                     new PlatformID(PLATFORM, video_response.data.response.owner.id.toString(), plugin.config.id),
                     video_response.data.response.owner.nickname,
-                    `${USER_URL_PREFIX}${video_response.data.response.owner.id}`,
+                    `${USER_URL_PREFIX}${video_response.data.response.owner.id.toString()}`,
                     video_response.data.response.owner.iconUrl
                 ),
                 url: video_url,
@@ -497,6 +481,7 @@ function getContentDetails(video_url: string) {
                     }
                 }],
                 getContentRecommendations: () => {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     const recommendations_response: FeedResponse = JSON.parse(local_http.GET(
                         `https://nvapi.nicovideo.jp/v1/recommend?recipeId=video_watch_recommendation&videoId=${video_id}&limit=25&site=nicovideo&_frontendId=6`,
                         {},
@@ -580,7 +565,7 @@ function getChannel(url: string) {
     const res = local_http.GET(`https://www.nicovideo.jp/user/${user_id}/video`, {}, false)
 
     if (!res.isOk) {
-        throw new ScriptException(`Failed request [${url}] (${res.code})`)
+        throw new ScriptException(`Failed request [${url}] (${res.code.toString()})`)
     }
 
     const user = get_data_from_html(res.body)
@@ -607,7 +592,7 @@ function getChannelCapabilities(): ResultCapabilities<never, ChannelTypeCapabili
 }
 function getChannelContents(url: string, type: ChannelTypeCapabilities | null, order: Order | null, filters: FilterQuery<never> | null): ContentPager {
     const match_result = url.match(NICO_CHANNEL_URL_REGEX)
-    if (match_result === null || match_result[1] === undefined) {
+    if (match_result?.[1] === undefined) {
         throw new ScriptException("regex error")
     }
     const user_id = match_result[1]
@@ -650,6 +635,7 @@ class ChannelVideoPager extends VideoPager {
         url.searchParams.set("sortKey", sort_key)
         url.searchParams.set("page", "1")
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const channel_videos_response: ChannelVideosResponse = JSON.parse(local_http.GET(
             url.toString(),
             { "X-Frontend-Id": "6", },
@@ -665,6 +651,7 @@ class ChannelVideoPager extends VideoPager {
     }
     override nextPage(this: ChannelVideoPager) {
         this.url.searchParams.set("page", this.next_page.toString())
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const channel_videos_response: ChannelVideosResponse = JSON.parse(local_http.GET(
             this.url.toString(),
             { "X-Frontend-Id": "6", },
@@ -687,7 +674,7 @@ class ChannelVideoPager extends VideoPager {
 }
 function getChannelPlaylists(url: string): PlaylistPager {
     const match_result = url.match(NICO_CHANNEL_URL_REGEX)
-    if (match_result === null || match_result[1] === undefined) {
+    if (match_result?.[1] === undefined) {
         throw new ScriptException("regex error")
     }
     const user_id = match_result[1]
@@ -698,6 +685,7 @@ function getChannelPlaylists(url: string): PlaylistPager {
 class ChannelPlaylistsPager extends PlaylistPager {
     private next_page: number
     constructor(private readonly user_id: string, private readonly page_size: number) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const search_response: ChannelPlaylistsResponse = JSON.parse(local_http.GET(
             `https://nvapi.nicovideo.jp/v1/users/${user_id}/mylists`,
             { "X-Frontend-Id": "6" },
@@ -709,6 +697,7 @@ class ChannelPlaylistsPager extends PlaylistPager {
         const url = new URL(`https://nvapi.nicovideo.jp/v1/users/${user_id}/series`)
         url.searchParams.set("page", first_page.toString())
         url.searchParams.set("pageSize", page_size.toString())
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const series_search_response: ChannelSeriesResponse = JSON.parse(local_http.GET(
             url.toString(),
             { "X-Frontend-Id": "6" },
@@ -729,6 +718,7 @@ class ChannelPlaylistsPager extends PlaylistPager {
         const url = new URL(`https://nvapi.nicovideo.jp/v1/users/${this.user_id}/series`)
         url.searchParams.set("page", this.next_page.toString())
         url.searchParams.set("pageSize", this.page_size.toString())
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const search_response: ChannelSeriesResponse = JSON.parse(local_http.GET(
             url.toString(),
             { "X-Frontend-Id": "6" },
@@ -756,7 +746,7 @@ function format_channel_playlist(playlist: NiconicoChannelList): PlatformPlaylis
             `${USER_URL_PREFIX}${playlist.owner.id}`,
             playlist.owner.iconUrl
         ),
-        url: `https://www.nicovideo.jp/user/${playlist.owner.id}/mylist/${playlist.id}`,
+        url: `https://www.nicovideo.jp/user/${playlist.owner.id}/mylist/${playlist.id.toString()}`,
         videoCount: playlist.itemsCount
     })
 }
@@ -769,7 +759,7 @@ function format_channel_series(playlist: NiconicoChannelSeries): PlatformPlaylis
             MISSING_AUTHOR,
             `${USER_URL_PREFIX}${playlist.owner.id}`
         ),
-        url: `https://www.nicovideo.jp/user/${playlist.owner.id}/series/${playlist.id}`,
+        url: `https://www.nicovideo.jp/user/${playlist.owner.id}/series/${playlist.id.toString()}`,
         videoCount: playlist.itemsCount,
         thumbnail: playlist.thumbnailUrl,
         thumbnails: new Thumbnails([new Thumbnail(playlist.thumbnailUrl, HARDCODED_THUMBNAIL_QUALITY)])
@@ -797,7 +787,8 @@ function getPlaylist(playlist_url: string): PlatformPlaylistDetails {
 
         // it's a watch later playlist
         if (playlist_id === undefined) {
-            const url = `https://nvapi.nicovideo.jp/v1/users/me/watch-later?sortKey=addedAt&sortOrder=desc&pageSize=${page_size}&page=1`
+            const url = `https://nvapi.nicovideo.jp/v1/users/me/watch-later?sortKey=addedAt&sortOrder=desc&pageSize=${page_size.toString()}&page=1`
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const response: WatchLaterResponse = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, true).body)
 
             return new PlatformPlaylistDetails({
@@ -806,7 +797,7 @@ function getPlaylist(playlist_url: string): PlatformPlaylistDetails {
                 author: new PlatformAuthorLink(
                     new PlatformID(PLATFORM, DEFAULT_AUTHOR.toString(), plugin.config.id),
                     MISSING_AUTHOR,
-                    `${USER_URL_PREFIX}${DEFAULT_AUTHOR}`,
+                    `${USER_URL_PREFIX}${DEFAULT_AUTHOR.toString()}`,
                     DEFAULT_AUTHOR_THUMB
                 ),
                 url: "https://www.nicovideo.jp/my/watchlater",
@@ -819,7 +810,8 @@ function getPlaylist(playlist_url: string): PlatformPlaylistDetails {
             })
         }
 
-        const url = `https://nvapi.nicovideo.jp/v1/users/me/mylists/${playlist_id}?pageSize=${page_size}&page=1`
+        const url = `https://nvapi.nicovideo.jp/v1/users/me/mylists/${playlist_id}?pageSize=${page_size.toString()}&page=1`
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const response: PlaylistResponse = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, true).body)
 
         return new PlatformPlaylistDetails({
@@ -843,6 +835,7 @@ function getPlaylist(playlist_url: string): PlatformPlaylistDetails {
     }
 
     const user_id = match_result[1]
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     const type: "mylist" | "series" = match_result[2] as "mylist" | "series"
     const playlist_id = match_result[3]
     if (user_id === undefined || playlist_id === undefined) {
@@ -851,7 +844,8 @@ function getPlaylist(playlist_url: string): PlatformPlaylistDetails {
 
     switch (type) {
         case "mylist": {
-            const url = `https://nvapi.nicovideo.jp/v2/mylists/${playlist_id}?pageSize=${page_size}&page=1&sensitiveContents=mask`
+            const url = `https://nvapi.nicovideo.jp/v2/mylists/${playlist_id}?pageSize=${page_size.toString()}&page=1&sensitiveContents=mask`
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const response: PlaylistResponse = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, false).body)
 
             return new PlatformPlaylistDetails({
@@ -874,7 +868,8 @@ function getPlaylist(playlist_url: string): PlatformPlaylistDetails {
             })
         }
         case "series": {
-            const url = `https://nvapi.nicovideo.jp/v2/series/${playlist_id}?page=1&sensitiveContents=mask&pageSize=${page_size}`
+            const url = `https://nvapi.nicovideo.jp/v2/series/${playlist_id}?page=1&sensitiveContents=mask&pageSize=${page_size.toString()}`
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const response: SeriesResponse = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, false).body)
 
             return new PlatformPlaylistDetails({
@@ -883,10 +878,10 @@ function getPlaylist(playlist_url: string): PlatformPlaylistDetails {
                 author: new PlatformAuthorLink(
                     new PlatformID(PLATFORM, response.data.detail.owner.user.id.toString(), plugin.config.id),
                     response.data.detail.owner.user.nickname,
-                    `${USER_URL_PREFIX}${response.data.detail.owner.user.id}`,
+                    `${USER_URL_PREFIX}${response.data.detail.owner.user.id.toString()}`,
                     response.data.detail.owner.user.icons.large
                 ),
-                url: `https://www.nicovideo.jp/user/${response.data.detail.owner.user.id}/series/${playlist_id}`,
+                url: `https://www.nicovideo.jp/user/${response.data.detail.owner.user.id.toString()}/series/${playlist_id}`,
                 videoCount: response.data.totalCount,
                 contents: new SeriesVideoPager(
                     response.data.items.map((item) => item.video),
@@ -911,7 +906,8 @@ class WatchLaterVideoPager extends VideoPager {
         this.next_page = 2
     }
     override nextPage(this: WatchLaterVideoPager): WatchLaterVideoPager {
-        const url = `https://nvapi.nicovideo.jp/v1/users/me/watch-later?sortKey=addedAt&sortOrder=desc&pageSize=${this.page_size}&page=${this.next_page}`
+        const url = `https://nvapi.nicovideo.jp/v1/users/me/watch-later?sortKey=addedAt&sortOrder=desc&pageSize=${this.page_size.toString()}&page=${this.next_page.toString()}`
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const response: WatchLaterResponse = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, true).body)
 
         this.results = response.data.watchLater.items.map((item) => item.video).map(nico_video_to_PlatformVideo)
@@ -933,7 +929,8 @@ class LoggedInPlaylistVideoPager extends VideoPager {
         this.next_page = 2
     }
     override nextPage(this: LoggedInPlaylistVideoPager): LoggedInPlaylistVideoPager {
-        const url = `https://nvapi.nicovideo.jp/v2/users/me/mylists/${this.playlist_id}?pageSize=${this.page_size}&page=${this.next_page}`
+        const url = `https://nvapi.nicovideo.jp/v2/users/me/mylists/${this.playlist_id}?pageSize=${this.page_size.toString()}&page=${this.next_page.toString()}`
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const response: PlaylistResponse = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, true).body)
 
         this.results = response.data.mylist.items.map((item) => item.video).map(nico_video_to_PlatformVideo)
@@ -955,7 +952,8 @@ class PlaylistVideoPager extends VideoPager {
         this.next_page = 2
     }
     override nextPage(this: PlaylistVideoPager): PlaylistVideoPager {
-        const url = `https://nvapi.nicovideo.jp/v2/mylists/${this.playlist_id}?pageSize=${this.page_size}&page=${this.next_page}&sensitiveContents=mask`
+        const url = `https://nvapi.nicovideo.jp/v2/mylists/${this.playlist_id}?pageSize=${this.page_size.toString()}&page=${this.next_page.toString()}&sensitiveContents=mask`
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const response: PlaylistResponse = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, false).body)
 
         this.results = response.data.mylist.items.map((item) => item.video).map(nico_video_to_PlatformVideo)
@@ -977,7 +975,8 @@ class SeriesVideoPager extends VideoPager {
         this.next_page = 2
     }
     override nextPage(this: SeriesVideoPager): SeriesVideoPager {
-        const url = `https://nvapi.nicovideo.jp/v2/series/${this.playlist_id}?pageSize=${this.page_size}&page=${this.next_page}&sensitiveContents=mask`
+        const url = `https://nvapi.nicovideo.jp/v2/series/${this.playlist_id}?pageSize=${this.page_size.toString()}&page=${this.next_page.toString()}&sensitiveContents=mask`
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const response: SeriesResponse = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, false).body)
 
         this.results = response.data.items.map((item) => item.video).map(nico_video_to_PlatformVideo)
@@ -1008,6 +1007,7 @@ class NiconicoPlaylistPager extends PlaylistPager {
         url.searchParams.set("pageSize", page_size.toString())
         url.searchParams.set("page", "1")
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const search_response: PlaylistSearchResponse = JSON.parse(local_http.GET(url.toString(), {}, false).body)
 
         super(search_response.data.items.map(format_playlist), search_response.data.hasNext)
@@ -1017,6 +1017,7 @@ class NiconicoPlaylistPager extends PlaylistPager {
     }
     override nextPage(this: NiconicoPlaylistPager) {
         this.url.searchParams.set("page", this.next_page.toString())
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const search_response: PlaylistSearchResponse = JSON.parse(local_http.GET(this.url.toString(), {}, false).body)
 
         this.results = search_response.data.items.map(format_playlist)
@@ -1042,7 +1043,7 @@ function format_playlist(playlist: NiconicoList): PlatformPlaylist {
             `${USER_URL_PREFIX}${playlist.owner.id}`,
             playlist.owner.iconUrl
         ),
-        url: `https://www.nicovideo.jp/user/${playlist.owner.id}/mylist/${playlist.id}`,
+        url: `https://www.nicovideo.jp/user/${playlist.owner.id}/mylist/${playlist.id.toString()}`,
         videoCount: playlist.videoCount,
         thumbnail: playlist.thumbnailUrl,
     })
@@ -1054,9 +1055,10 @@ function getUserPlaylists() {
     const res = local_http.GET(URL_PLAYLISTS, { "X-Frontend-Id": "6" }, true)
 
     if (!res.isOk) {
-        throw new ScriptException(`Failed request [${URL_PLAYLISTS}] (${res.code})`)
+        throw new ScriptException(`Failed request [${URL_PLAYLISTS}] (${res.code.toString()})`)
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const user_playlists_response: UserPlaylistsResponse = JSON.parse(res.body)
 
     const playlistUrls = user_playlists_response.data.mylists.map(
@@ -1073,9 +1075,10 @@ function getUserSubscriptions() {
     const res = local_http.GET(url.toString(), { "X-Frontend-Id": "6", }, true)
 
     if (!res.isOk) {
-        throw new ScriptException(`Failed request [${url.toString()}] (${res.code})`)
+        throw new ScriptException(`Failed request [${url.toString()}] (${res.code.toString()})`)
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const user_subscriptions_response: UserSubscriptionsResponse = JSON.parse(res.body)
 
     const subscriptions = user_subscriptions_response.data.items.map((x) => {
@@ -1092,9 +1095,10 @@ function getUserSubscriptions() {
         const res = local_http.GET(url.toString(), { "X-Frontend-Id": "6", }, true)
 
         if (!res.isOk) {
-            throw new ScriptException(`Failed request [${url.toString()}] (${res.code})`)
+            throw new ScriptException(`Failed request [${url.toString()}] (${res.code.toString()})`)
         }
 
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const user_subscriptions_response: UserSubscriptionsResponse = JSON.parse(res.body)
 
         subscriptions.push(...user_subscriptions_response.data.items.map((x) => {
@@ -1138,6 +1142,7 @@ function get_data_from_html(html: string) {
     if (json === undefined) {
         throw new ScriptException("missing data")
     }
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const data: UserResponse = JSON.parse(json)
 
     const user = data.state.userDetails.userDetails.user

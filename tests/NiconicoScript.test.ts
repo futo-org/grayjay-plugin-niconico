@@ -8,12 +8,12 @@ import "@kaidelorenzo/grayjay-polyfill"
 import "../src/NiconicoScript.js"
 //#endregion
 
-describe("script module integration", { skip: false }, () => {
-    test("test disable", { skip: false }, () => {
+await Promise.allSettled([describe("script module integration", { skip: false }, () => {
+    return test("test disable", { skip: false }, () => {
         if (source.disable === undefined) {
             throw new Error("Missing disable method")
         }
         source.disable()
         assert.strictEqual("11", (11).toString())
     })
-})
+})])

@@ -53,6 +53,7 @@ init_source(local_source);
 function init_source(local_source) {
     for (const method_key of Object.keys(local_source)) {
         // @ts-expect-error assign to readonly constant source object
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         source[method_key] = local_source[method_key];
     }
 }
@@ -69,6 +70,7 @@ function enable(conf, settings, saved_state) {
         log(saved_state);
     }
     if (saved_state !== null && saved_state !== undefined) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const state = JSON.parse(saved_state);
         local_state = state;
     }
@@ -90,8 +92,9 @@ function disable() {
 function getHome() {
     const response = local_http.GET(URL_RECOMMENDED_FEED, {}, bridge.isLoggedIn());
     if (response.code !== 200) {
-        throw new ScriptException(`Failed request [${URL_RECOMMENDED_FEED}] (${response.code})`);
+        throw new ScriptException(`Failed request [${URL_RECOMMENDED_FEED}] (${response.code.toString()})`);
     }
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const feed_response = JSON.parse(response.body);
     const platform_videos = feed_response.data.items.flatMap((x) => {
         if (x.contentType === "video") {
@@ -111,47 +114,27 @@ function searchSuggestions(query) {
     const url = `https://sug.search.nicovideo.jp/suggestion/expand/${query}`;
     const res = local_http.GET(url, {}, false);
     if (!res.isOk) {
-        throw new ScriptException(`Failed request [${url}] (${res.code})`);
+        throw new ScriptException(`Failed request [${url}] (${res.code.toString()})`);
     }
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const response = JSON.parse(res.body);
     return response.candidates;
 }
 function getSearchCapabilities() {
-    return new ResultCapabilities([Type.Feed.Videos, Type.Feed.Live], [Type.Order.Chronological, Type.Order.Favorites, Type.Order.Views], [new FilterGroup("Additional Content", [
-            new FilterCapability("Live", "LIVE", "Live"),
-            new FilterCapability("Videos", "VIDEOS", "Videos")
-        ], false, "ADDITIONAL_CONTENT")]);
+    return new ResultCapabilities([Type.Feed.Videos, Type.Feed.Mixed], [Type.Order.Chronological, Type.Order.Favorites, Type.Order.Views], []);
 }
-function search(query, type, order, filters) {
-    if (filters === null) {
+function search(query, _type, order, filters) {
+    if (filters === null || Object.keys(filters).length !== 0) {
         throw new ScriptException("unreachable");
     }
     if (order === "CHRONOLOGICAL" || order === null) {
         order = Type.Order.Chronological;
     }
-    if (type === null) {
-        type = (() => {
-            switch (filters["ADDITIONAL_CONTENT"]?.[0]) {
-                case "VIDEOS":
-                    return Type.Feed.Videos;
-                case "LIVE":
-                    return Type.Feed.Live;
-                case undefined:
-                    log("Niconico log: search type is null defaulting to Videos");
-                    return Type.Feed.Videos;
-                default:
-                    throw new ScriptException("unreachable");
-            }
-        })();
-    }
-    switch (type) {
-        case Type.Feed.Live:
-            return new SearchLivePager(query, order);
-        case Type.Feed.Videos:
-            return new SearchVideoPager(query, order, 10);
-        default:
-            throw assert_exhaustive(type, "unreachable");
-    }
+    // lives videos are not playable so don't include them
+    // case Type.Feed.Live:
+    //     return new SearchLivePager(query, order)
+    console.log(SearchLivePager);
+    return new SearchVideoPager(query, order, 10);
 }
 class SearchVideoPager extends VideoPager {
     url;
@@ -177,6 +160,7 @@ class SearchVideoPager extends VideoPager {
         url.searchParams.set("sortOrder", "desc");
         url.searchParams.set("page", "1");
         url.searchParams.set("pageSize", page_size.toString());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const videos_response = JSON.parse(local_http.GET(url.toString(), { "X-Frontend-Id": "6", }, false).body);
         const platform_videos = videos_response.data.items.map(nico_video_to_PlatformVideo);
         super(platform_videos, videos_response.data.hasNext);
@@ -185,6 +169,7 @@ class SearchVideoPager extends VideoPager {
     }
     nextPage() {
         this.url.searchParams.set("page", this.next_page.toString());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const videos_response = JSON.parse(local_http.GET(this.url.toString(), { "X-Frontend-Id": "6", }, false).body);
         const platform_videos = videos_response.data.items.map(nico_video_to_PlatformVideo);
         this.hasMore = videos_response.data.hasNext;
@@ -215,13 +200,14 @@ class SearchLivePager extends VideoPager {
         url.searchParams.set("page", "1");
         const res = local_http.GET(url.toString(), {}, false);
         if (!res.isOk) {
-            throw new ScriptException(`Failed request [${url.toString()}] (${res.code})`);
+            throw new ScriptException(`Failed request [${url.toString()}] (${res.code.toString()})`);
         }
         // using the DOM parser because the data is stored in an element attribute with annoying &quot;
         const data = local_dom_parser.parseFromString(res.body).getElementById("embedded-data")?.getAttribute("data-props");
         if (data === undefined) {
             throw new ScriptException("missing data");
         }
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const obj = JSON.parse(data);
         const platform_videos = obj.searchResult.programs.onair.map(format_live_search_results);
         super(platform_videos, obj.searchResult.programs.onair.length !== 0);
@@ -232,13 +218,14 @@ class SearchLivePager extends VideoPager {
         this.url.searchParams.set("page", this.next_page.toString());
         const res = local_http.GET(this.url.toString(), {}, false);
         if (!res.isOk) {
-            throw new ScriptException(`Failed request [${this.url.toString()}] (${res.code})`);
+            throw new ScriptException(`Failed request [${this.url.toString()}] (${res.code.toString()})`);
         }
         // using the DOM parser because the data is stored in an element attribute with annoying &quot;
         const data = local_dom_parser.parseFromString(res.body).getElementById("embedded-data")?.getAttribute("data-props");
         if (data === undefined) {
             throw new ScriptException("missing data");
         }
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const obj = JSON.parse(data);
         const platform_videos = obj.searchResult.programs.onair.map(format_live_search_results);
         this.hasMore = obj.searchResult.programs.onair.length !== 0;
@@ -269,7 +256,7 @@ function format_live_search_results(live_broadcast) {
 //#region content
 function getContentDetails(video_url) {
     const match_result = video_url.match(NICO_VIDEO_URL_REGEX);
-    if (match_result === null || match_result[1] === undefined || match_result[2] === undefined) {
+    if (match_result?.[1] === undefined || match_result[2] === undefined) {
         throw new ScriptException("regex error");
     }
     const video_type = match_result[1];
@@ -281,11 +268,12 @@ function getContentDetails(video_url) {
             if (data === undefined) {
                 throw new ScriptException("missing server response data");
             }
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const video_response = JSON.parse(data);
             if (video_response.data.response.errorCode === "FORBIDDEN") {
                 throw new UnavailableException("This content is region locked");
             }
-            const audio_id = video_response.data.response.media.domand.audios[0]?.id;
+            const audio_id = video_response.data.response.media.domand.audios.find(audio => audio.isAvailable)?.id;
             if (audio_id === undefined) {
                 throw new ScriptException("missing audio track");
             }
@@ -308,7 +296,9 @@ function getContentDetails(video_url) {
             if (response === undefined || raw_thread_response === undefined) {
                 throw new ScriptException("unreachable");
             }
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const hls = JSON.parse(response.body);
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const thread_response = JSON.parse(raw_thread_response.body);
             const subtitles = thread_response.data.threads[0]?.comments.filter((comment) => comment.commands.includes("shita"));
             if (subtitles === undefined) {
@@ -331,7 +321,7 @@ function getContentDetails(video_url) {
             return new PlatformVideoDetails({
                 id: new PlatformID(PLATFORM, video_id, plugin.config.id),
                 name: video.title,
-                author: new PlatformAuthorLink(new PlatformID(PLATFORM, video_response.data.response.owner.id.toString(), plugin.config.id), video_response.data.response.owner.nickname, `${USER_URL_PREFIX}${video_response.data.response.owner.id}`, video_response.data.response.owner.iconUrl),
+                author: new PlatformAuthorLink(new PlatformID(PLATFORM, video_response.data.response.owner.id.toString(), plugin.config.id), video_response.data.response.owner.nickname, `${USER_URL_PREFIX}${video_response.data.response.owner.id.toString()}`, video_response.data.response.owner.iconUrl),
                 url: video_url,
                 thumbnails: new Thumbnails([new Thumbnail(video.thumbnail.ogp, HARDCODED_THUMBNAIL_QUALITY)]),
                 duration: video.duration,
@@ -360,6 +350,7 @@ function getContentDetails(video_url) {
                         }
                     }],
                 getContentRecommendations: () => {
+                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     const recommendations_response = JSON.parse(local_http.GET(`https://nvapi.nicovideo.jp/v1/recommend?recipeId=video_watch_recommendation&videoId=${video_id}&limit=25&site=nicovideo&_frontendId=6`, {}, false).body);
                     return new ContentPager(recommendations_response.data.items
                         .flatMap((item) => {
@@ -423,7 +414,7 @@ function getChannel(url) {
     }
     const res = local_http.GET(`https://www.nicovideo.jp/user/${user_id}/video`, {}, false);
     if (!res.isOk) {
-        throw new ScriptException(`Failed request [${url}] (${res.code})`);
+        throw new ScriptException(`Failed request [${url}] (${res.code.toString()})`);
     }
     const user = get_data_from_html(res.body);
     const channel = {
@@ -443,7 +434,7 @@ function getChannelCapabilities() {
 }
 function getChannelContents(url, type, order, filters) {
     const match_result = url.match(NICO_CHANNEL_URL_REGEX);
-    if (match_result === null || match_result[1] === undefined) {
+    if (match_result?.[1] === undefined) {
         throw new ScriptException("regex error");
     }
     const user_id = match_result[1];
@@ -482,6 +473,7 @@ class ChannelVideoPager extends VideoPager {
         url.searchParams.set("pageSize", page_size.toString());
         url.searchParams.set("sortKey", sort_key);
         url.searchParams.set("page", "1");
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const channel_videos_response = JSON.parse(local_http.GET(url.toString(), { "X-Frontend-Id": "6", }, false).body);
         const nicoVideos = channel_videos_response.data.items.map((x) => x.essential);
         const platform_videos = nicoVideos.map(nico_video_to_PlatformVideo);
@@ -492,6 +484,7 @@ class ChannelVideoPager extends VideoPager {
     }
     nextPage() {
         this.url.searchParams.set("page", this.next_page.toString());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const channel_videos_response = JSON.parse(local_http.GET(this.url.toString(), { "X-Frontend-Id": "6", }, false).body);
         const nicoVideos = channel_videos_response.data.items.map((x) => x.essential);
         const platform_videos = nicoVideos.map(nico_video_to_PlatformVideo);
@@ -506,7 +499,7 @@ class ChannelVideoPager extends VideoPager {
 }
 function getChannelPlaylists(url) {
     const match_result = url.match(NICO_CHANNEL_URL_REGEX);
-    if (match_result === null || match_result[1] === undefined) {
+    if (match_result?.[1] === undefined) {
         throw new ScriptException("regex error");
     }
     const user_id = match_result[1];
@@ -518,11 +511,13 @@ class ChannelPlaylistsPager extends PlaylistPager {
     page_size;
     next_page;
     constructor(user_id, page_size) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const search_response = JSON.parse(local_http.GET(`https://nvapi.nicovideo.jp/v1/users/${user_id}/mylists`, { "X-Frontend-Id": "6" }, false).body);
         const first_page = 1;
         const url = new URL(`https://nvapi.nicovideo.jp/v1/users/${user_id}/series`);
         url.searchParams.set("page", first_page.toString());
         url.searchParams.set("pageSize", page_size.toString());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const series_search_response = JSON.parse(local_http.GET(url.toString(), { "X-Frontend-Id": "6" }, false).body);
         super([
             ...search_response.data.mylists.map(format_channel_playlist),
@@ -536,6 +531,7 @@ class ChannelPlaylistsPager extends PlaylistPager {
         const url = new URL(`https://nvapi.nicovideo.jp/v1/users/${this.user_id}/series`);
         url.searchParams.set("page", this.next_page.toString());
         url.searchParams.set("pageSize", this.page_size.toString());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const search_response = JSON.parse(local_http.GET(url.toString(), { "X-Frontend-Id": "6" }, false).body);
         this.results = search_response.data.items.map(format_channel_series);
         this.hasMore = search_response.data.totalCount > this.next_page * this.page_size;
@@ -551,7 +547,7 @@ function format_channel_playlist(playlist) {
         id: new PlatformID(PLATFORM, playlist.id.toString(), plugin.config.id),
         name: playlist.name,
         author: new PlatformAuthorLink(new PlatformID(PLATFORM, playlist.owner.id, plugin.config.id), playlist.owner.name, `${USER_URL_PREFIX}${playlist.owner.id}`, playlist.owner.iconUrl),
-        url: `https://www.nicovideo.jp/user/${playlist.owner.id}/mylist/${playlist.id}`,
+        url: `https://www.nicovideo.jp/user/${playlist.owner.id}/mylist/${playlist.id.toString()}`,
         videoCount: playlist.itemsCount
     });
 }
@@ -560,7 +556,7 @@ function format_channel_series(playlist) {
         id: new PlatformID(PLATFORM, playlist.id.toString(), plugin.config.id),
         name: playlist.title,
         author: new PlatformAuthorLink(new PlatformID(PLATFORM, playlist.owner.id, plugin.config.id), MISSING_AUTHOR, `${USER_URL_PREFIX}${playlist.owner.id}`),
-        url: `https://www.nicovideo.jp/user/${playlist.owner.id}/series/${playlist.id}`,
+        url: `https://www.nicovideo.jp/user/${playlist.owner.id}/series/${playlist.id.toString()}`,
         videoCount: playlist.itemsCount,
         thumbnail: playlist.thumbnailUrl,
         thumbnails: new Thumbnails([new Thumbnail(playlist.thumbnailUrl, HARDCODED_THUMBNAIL_QUALITY)])
@@ -582,18 +578,20 @@ function getPlaylist(playlist_url) {
         const playlist_id = playlist_url.match(LOGGED_IN_USER_LISTS_REGEX)?.[2];
         // it's a watch later playlist
         if (playlist_id === undefined) {
-            const url = `https://nvapi.nicovideo.jp/v1/users/me/watch-later?sortKey=addedAt&sortOrder=desc&pageSize=${page_size}&page=1`;
+            const url = `https://nvapi.nicovideo.jp/v1/users/me/watch-later?sortKey=addedAt&sortOrder=desc&pageSize=${page_size.toString()}&page=1`;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const response = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, true).body);
             return new PlatformPlaylistDetails({
                 id: new PlatformID(PLATFORM, "watch-later", plugin.config.id),
                 name: "Watch Later",
-                author: new PlatformAuthorLink(new PlatformID(PLATFORM, DEFAULT_AUTHOR.toString(), plugin.config.id), MISSING_AUTHOR, `${USER_URL_PREFIX}${DEFAULT_AUTHOR}`, DEFAULT_AUTHOR_THUMB),
+                author: new PlatformAuthorLink(new PlatformID(PLATFORM, DEFAULT_AUTHOR.toString(), plugin.config.id), MISSING_AUTHOR, `${USER_URL_PREFIX}${DEFAULT_AUTHOR.toString()}`, DEFAULT_AUTHOR_THUMB),
                 url: "https://www.nicovideo.jp/my/watchlater",
                 videoCount: response.data.watchLater.totalCount,
                 contents: new WatchLaterVideoPager(response.data.watchLater.items.map((item) => item.video), response.data.watchLater.hasNext, page_size)
             });
         }
-        const url = `https://nvapi.nicovideo.jp/v1/users/me/mylists/${playlist_id}?pageSize=${page_size}&page=1`;
+        const url = `https://nvapi.nicovideo.jp/v1/users/me/mylists/${playlist_id}?pageSize=${page_size.toString()}&page=1`;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const response = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, true).body);
         return new PlatformPlaylistDetails({
             id: new PlatformID(PLATFORM, playlist_id, plugin.config.id),
@@ -605,6 +603,7 @@ function getPlaylist(playlist_url) {
         });
     }
     const user_id = match_result[1];
+    // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
     const type = match_result[2];
     const playlist_id = match_result[3];
     if (user_id === undefined || playlist_id === undefined) {
@@ -612,7 +611,8 @@ function getPlaylist(playlist_url) {
     }
     switch (type) {
         case "mylist": {
-            const url = `https://nvapi.nicovideo.jp/v2/mylists/${playlist_id}?pageSize=${page_size}&page=1&sensitiveContents=mask`;
+            const url = `https://nvapi.nicovideo.jp/v2/mylists/${playlist_id}?pageSize=${page_size.toString()}&page=1&sensitiveContents=mask`;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const response = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, false).body);
             return new PlatformPlaylistDetails({
                 id: new PlatformID(PLATFORM, playlist_id, plugin.config.id),
@@ -624,13 +624,14 @@ function getPlaylist(playlist_url) {
             });
         }
         case "series": {
-            const url = `https://nvapi.nicovideo.jp/v2/series/${playlist_id}?page=1&sensitiveContents=mask&pageSize=${page_size}`;
+            const url = `https://nvapi.nicovideo.jp/v2/series/${playlist_id}?page=1&sensitiveContents=mask&pageSize=${page_size.toString()}`;
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const response = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, false).body);
             return new PlatformPlaylistDetails({
                 id: new PlatformID(PLATFORM, playlist_id, plugin.config.id),
                 name: response.data.detail.title,
-                author: new PlatformAuthorLink(new PlatformID(PLATFORM, response.data.detail.owner.user.id.toString(), plugin.config.id), response.data.detail.owner.user.nickname, `${USER_URL_PREFIX}${response.data.detail.owner.user.id}`, response.data.detail.owner.user.icons.large),
-                url: `https://www.nicovideo.jp/user/${response.data.detail.owner.user.id}/series/${playlist_id}`,
+                author: new PlatformAuthorLink(new PlatformID(PLATFORM, response.data.detail.owner.user.id.toString(), plugin.config.id), response.data.detail.owner.user.nickname, `${USER_URL_PREFIX}${response.data.detail.owner.user.id.toString()}`, response.data.detail.owner.user.icons.large),
+                url: `https://www.nicovideo.jp/user/${response.data.detail.owner.user.id.toString()}/series/${playlist_id}`,
                 videoCount: response.data.totalCount,
                 contents: new SeriesVideoPager(response.data.items.map((item) => item.video), response.data.totalCount > page_size * 1, playlist_id, page_size),
                 thumbnails: new Thumbnails([new Thumbnail(response.data.detail.thumbnailUrl, HARDCODED_THUMBNAIL_QUALITY)]),
@@ -651,7 +652,8 @@ class WatchLaterVideoPager extends VideoPager {
         this.next_page = 2;
     }
     nextPage() {
-        const url = `https://nvapi.nicovideo.jp/v1/users/me/watch-later?sortKey=addedAt&sortOrder=desc&pageSize=${this.page_size}&page=${this.next_page}`;
+        const url = `https://nvapi.nicovideo.jp/v1/users/me/watch-later?sortKey=addedAt&sortOrder=desc&pageSize=${this.page_size.toString()}&page=${this.next_page.toString()}`;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const response = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, true).body);
         this.results = response.data.watchLater.items.map((item) => item.video).map(nico_video_to_PlatformVideo);
         this.hasMore = response.data.watchLater.hasNext;
@@ -673,7 +675,8 @@ class LoggedInPlaylistVideoPager extends VideoPager {
         this.next_page = 2;
     }
     nextPage() {
-        const url = `https://nvapi.nicovideo.jp/v2/users/me/mylists/${this.playlist_id}?pageSize=${this.page_size}&page=${this.next_page}`;
+        const url = `https://nvapi.nicovideo.jp/v2/users/me/mylists/${this.playlist_id}?pageSize=${this.page_size.toString()}&page=${this.next_page.toString()}`;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const response = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, true).body);
         this.results = response.data.mylist.items.map((item) => item.video).map(nico_video_to_PlatformVideo);
         this.hasMore = response.data.mylist.totalItemCount > this.page_size * 1;
@@ -695,7 +698,8 @@ class PlaylistVideoPager extends VideoPager {
         this.next_page = 2;
     }
     nextPage() {
-        const url = `https://nvapi.nicovideo.jp/v2/mylists/${this.playlist_id}?pageSize=${this.page_size}&page=${this.next_page}&sensitiveContents=mask`;
+        const url = `https://nvapi.nicovideo.jp/v2/mylists/${this.playlist_id}?pageSize=${this.page_size.toString()}&page=${this.next_page.toString()}&sensitiveContents=mask`;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const response = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, false).body);
         this.results = response.data.mylist.items.map((item) => item.video).map(nico_video_to_PlatformVideo);
         this.hasMore = response.data.mylist.totalItemCount > this.page_size * 1;
@@ -717,7 +721,8 @@ class SeriesVideoPager extends VideoPager {
         this.next_page = 2;
     }
     nextPage() {
-        const url = `https://nvapi.nicovideo.jp/v2/series/${this.playlist_id}?pageSize=${this.page_size}&page=${this.next_page}&sensitiveContents=mask`;
+        const url = `https://nvapi.nicovideo.jp/v2/series/${this.playlist_id}?pageSize=${this.page_size.toString()}&page=${this.next_page.toString()}&sensitiveContents=mask`;
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const response = JSON.parse(local_http.GET(url, { "X-Frontend-Id": "6", }, false).body);
         this.results = response.data.items.map((item) => item.video).map(nico_video_to_PlatformVideo);
         this.hasMore = response.data.totalCount > this.page_size * 1;
@@ -744,6 +749,7 @@ class NiconicoPlaylistPager extends PlaylistPager {
         url.searchParams.set("types", type);
         url.searchParams.set("pageSize", page_size.toString());
         url.searchParams.set("page", "1");
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const search_response = JSON.parse(local_http.GET(url.toString(), {}, false).body);
         super(search_response.data.items.map(format_playlist), search_response.data.hasNext);
         this.next_page = 2;
@@ -751,6 +757,7 @@ class NiconicoPlaylistPager extends PlaylistPager {
     }
     nextPage() {
         this.url.searchParams.set("page", this.next_page.toString());
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const search_response = JSON.parse(local_http.GET(this.url.toString(), {}, false).body);
         this.results = search_response.data.items.map(format_playlist);
         this.hasMore = search_response.data.hasNext;
@@ -767,7 +774,7 @@ function format_playlist(playlist) {
         name: playlist.title,
         thumbnails: new Thumbnails([new Thumbnail(playlist.thumbnailUrl, HARDCODED_THUMBNAIL_QUALITY)]),
         author: new PlatformAuthorLink(new PlatformID(PLATFORM, playlist.owner.id, plugin.config.id), playlist.owner.name, `${USER_URL_PREFIX}${playlist.owner.id}`, playlist.owner.iconUrl),
-        url: `https://www.nicovideo.jp/user/${playlist.owner.id}/mylist/${playlist.id}`,
+        url: `https://www.nicovideo.jp/user/${playlist.owner.id}/mylist/${playlist.id.toString()}`,
         videoCount: playlist.videoCount,
         thumbnail: playlist.thumbnailUrl,
     });
@@ -777,8 +784,9 @@ function format_playlist(playlist) {
 function getUserPlaylists() {
     const res = local_http.GET(URL_PLAYLISTS, { "X-Frontend-Id": "6" }, true);
     if (!res.isOk) {
-        throw new ScriptException(`Failed request [${URL_PLAYLISTS}] (${res.code})`);
+        throw new ScriptException(`Failed request [${URL_PLAYLISTS}] (${res.code.toString()})`);
     }
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const user_playlists_response = JSON.parse(res.body);
     const playlistUrls = user_playlists_response.data.mylists.map((playlist) => `${LOGGED_IN_USER_LISTS_PREFIX}${playlist.id}`);
     return [...playlistUrls, "https://www.nicovideo.jp/my/watchlater"];
@@ -788,8 +796,9 @@ function getUserSubscriptions() {
     url.searchParams.set("pageSize", "100");
     const res = local_http.GET(url.toString(), { "X-Frontend-Id": "6", }, true);
     if (!res.isOk) {
-        throw new ScriptException(`Failed request [${url.toString()}] (${res.code})`);
+        throw new ScriptException(`Failed request [${url.toString()}] (${res.code.toString()})`);
     }
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const user_subscriptions_response = JSON.parse(res.body);
     const subscriptions = user_subscriptions_response.data.items.map((x) => {
         return `${USER_URL_PREFIX}${x.id}`;
@@ -800,8 +809,9 @@ function getUserSubscriptions() {
         url.searchParams.set("cursor", cursor);
         const res = local_http.GET(url.toString(), { "X-Frontend-Id": "6", }, true);
         if (!res.isOk) {
-            throw new ScriptException(`Failed request [${url.toString()}] (${res.code})`);
+            throw new ScriptException(`Failed request [${url.toString()}] (${res.code.toString()})`);
         }
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const user_subscriptions_response = JSON.parse(res.body);
         subscriptions.push(...user_subscriptions_response.data.items.map((x) => {
             return `${USER_URL_PREFIX}${x.id}`;
@@ -834,6 +844,7 @@ function get_data_from_html(html) {
     if (json === undefined) {
         throw new ScriptException("missing data");
     }
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const data = JSON.parse(json);
     const user = data.state.userDetails.userDetails.user;
     return user;

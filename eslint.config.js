@@ -3,8 +3,22 @@ import tseslint from "typescript-eslint"
 
 export default tseslint.config(
     eslint.configs.recommended,
-    ...tseslint.configs.strict,
+    tseslint.configs.strictTypeChecked,
+    tseslint.configs.stylisticTypeChecked,
     {
-        ignores: ["_dist", "build"]
+        rules: {
+            "@typescript-eslint/consistent-type-assertions": ["error", { assertionStyle: "never" }],
+            "@typescript-eslint/consistent-type-definitions": ["off"],
+            "@typescript-eslint/prefer-regexp-exec": "off",
+        },
+        languageOptions: {
+            parserOptions: {
+                projectService: true,
+                tsconfigRootDir: import.meta.dirname,
+            },
+        },
+    },
+    {
+        ignores: ["_dist/", "build", "eslint.config.js"],
     }
 )
