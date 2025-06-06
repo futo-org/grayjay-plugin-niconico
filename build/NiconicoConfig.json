@@ -1,5 +1,5 @@
 {
-    "$schema" : "https://github.com/MithrilGoat/GrayJay-Plugin-Schema/releases/latest/download/Schema.json",
+    "$schema": "https://github.com/MithrilGoat/GrayJay-Plugin-Schema/releases/latest/download/Schema.json",
     "name": "Niconico",
     "description": "Niconico is the biggest video platform in Japan",
     "author": "FUTO",
@@ -8,7 +8,7 @@
     "sourceUrl": "https://plugins.grayjay.app/Niconico/NiconicoConfig.json",
     "repositoryUrl": "https://gitlab.futo.org/videostreaming/plugins/niconico",
     "scriptUrl": "./NiconicoScript.js",
-    "version": 2,
+    "version": 3,
     "iconUrl": "./NiconicoIcon.png",
     "id": "99224109-ac6d-426f-a1c1-4c8051f946fd",
     "scriptSignature": "",
@@ -28,10 +28,15 @@
         "public.nvcomment.nicovideo.jp"
     ],
     "authentication": {
-        "userAgent": "Mozilla/5.0 (Android 14; Mobile; rv:132.0) Gecko/132.0 Firefox/132.0",
+        "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:139.0) Gecko/20100101 Firefox/139.0",
         "loginUrl": "https://account.nicovideo.jp/login",
         "cookiesToFind": [
             "user_session"
+        ]
+    },
+    "changelog": {
+        "3": [
+            "Fix login"
         ]
     }
 }
